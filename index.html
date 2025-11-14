@@ -1178,11 +1178,9 @@
         function extractBaselineSpecsForColumn(sheet, column) {
             const specs = {};
             
-            console.log(`开始从列${column}提取基准规格`);
-            
-            // 从第2行开始读取规格,直到遇到#EOF或超出合理范围
             let row = 2;
             const maxRows = 100;
+            let lastAttrName = null;  // 记录上一行的属性名
             
             while (row <= maxRows) {
                 const attrCell = `A${row}`;
@@ -1193,27 +1191,38 @@
                 
                 console.log(`行${row}: 属性="${attrName}", 值="${attrValue}"`);
                 
-                // 检查是否遇到#EOF标记
                 if (attrName === '#EOF') {
                     console.log('遇到#EOF标记,停止读取');
                     break;
                 }
                 
-                // 只添加techSpecMapping中定义的属性
+                // 情况1: A列有属性名，且在mapping中
                 if (attrName && techSpecMapping.hasOwnProperty(attrName)) {
                     specs[attrName] = {
                         value: attrValue,
-                        cell: valueCell
+                        cell: valueCell,
+                        cells: [valueCell]
                     };
-                    console.log(`添加规格: ${attrName} = "${attrValue}" (映射到: ${techSpecMapping[attrName]})`);
-                } else if (attrName) {
-                    console.log(`跳过未映射的属性: ${attrName}`);
+                    lastAttrName = attrName;
+                    console.log(`添加规格: ${attrName} = "${attrValue}"`);
+                }
+                // 情况2: A列为空，但有值，且上一行是有效属性 - 这是多行数据的延续
+                else if (!attrName && attrValue && lastAttrName && specs[lastAttrName]) {
+                    // 追加到上一个属性
+                    const existingValue = specs[lastAttrName].value;
+                    specs[lastAttrName].value = existingValue + '\n' + attrValue;
+                    specs[lastAttrName].cells.push(valueCell);
+                    console.log(`追加到${lastAttrName}: "${attrValue}"`);
+                }
+                // 情况3: A列为空，值也为空 - 重置lastAttrName
+                else if (!attrName && !attrValue) {
+                    lastAttrName = null;
                 }
                 
                 row++;
             }
             
-            console.log(`列${column}基准规格提取完成,总共提取到:`, Object.keys(specs).length, '个规格');
+            console.log('基准规格提取完成,总共提取到:', Object.keys(specs).length, '个规格');
             console.log('规格列表:', Object.keys(specs));
             
             return specs;
@@ -1617,32 +1626,67 @@
             const cameraSpecs = {};
             
             if (!sheet) {
-                return cameraSpecs; // 返回空对象如果没有CAM工作表
+                return cameraSpecs;
             }
             
-            // 检查G2到G10的位置来查找Front和Back camera
-            for (let row = 2; row <= 10; row++) {
-                const gCell = `G${row}`;
-                const bCell = `E${row}`;
+            // 找到关键列的位置
+            let locationCol = null;
+            let elementDescCol = null;
+            let descriptionCol = null;
+            
+            // 扫描第1行找到列标题
+            for (let col = 1; col <= 50; col++) {
+                const colLetter = getColumnLetter(col);
+                const headerCell = sheet[`${colLetter}1`];
+                if (headerCell) {
+                    const headerValue = String(headerCell.v).trim().toUpperCase().replace(/\s+/g, '');
+                    if (headerValue === 'LOCATION' || headerValue === 'FEATURES_LOCATION') locationCol = colLetter;
+                    if (headerValue === 'ELEMENTDESC' || headerValue === 'ELEMENT_DESC' || headerValue === 'IELEMENT_DESC') elementDescCol = colLetter;
+                    if (headerValue === 'DESCRIPTION' || headerValue === 'DESCRIPTI') descriptionCol = colLetter;
+                }
+            }
+            
+            console.log('CAM表列位置:', {
+                locationCol,
+                elementDescCol,
+                descriptionCol
+            });
+            
+            // 遍历数据行
+            for (let row = 2; row <= 20; row++) {
+                if (!locationCol || !elementDescCol) {
+                    console.log('未找到必要的列，跳过CAM表解析');
+                    break;
+                }
                 
-                const gValue = sheet[gCell] ? String(sheet[gCell].v).trim().toLowerCase() : '';
-                const bValue = sheet[bCell] ? String(sheet[bCell].v).trim() : '';
+                const locationValue = sheet[`${locationCol}${row}`] ? 
+                    String(sheet[`${locationCol}${row}`].v).trim().toLowerCase() : '';
+                const elementDescValue = sheet[`${elementDescCol}${row}`] ? 
+                    String(sheet[`${elementDescCol}${row}`].v).trim() : '';
+                const descriptionValue = descriptionCol && sheet[`${descriptionCol}${row}`] ? 
+                    String(sheet[`${descriptionCol}${row}`].v).trim() : '';
                 
-                if (gValue === 'front') {
+                console.log(`CAM表第${row}行: LOCATION=${locationValue}, ElementDesc=${elementDescValue}`);
+                
+                if (locationValue === 'front') {
+                    // Front Camera - 使用Element Desc列作为显示值
                     cameraSpecs['Front Camera'] = {
-                        value: bValue,
-                        cell: bCell
+                        value: elementDescValue,  // 显示Element Desc列的值
+                        cell: `${elementDescCol}${row}`,
+                        technicalValue: descriptionValue || elementDescValue  // 技术参数值
                     };
-                } else if (gValue === 'back') {
+                    console.log('找到Front Camera:', cameraSpecs['Front Camera']);
+                    
+                } else if (locationValue === 'back') {
+                    // Back Camera - 使用Element Desc列作为显示值
                     cameraSpecs['Back Camera'] = {
-                        value: bValue,
-                        cell: bCell
+                        value: elementDescValue,  // 显示Element Desc列的值
+                        cell: `${elementDescCol}${row}`,
+                        technicalValue: descriptionValue || elementDescValue  // 技术参数值
                     };
-                    // 也添加Back别名支持
-                    cameraSpecs['Back'] = {
-                        value: bValue,
-                        cell: bCell
-                    };
+                    // 也添加Back别名
+                    cameraSpecs['Back'] = cameraSpecs['Back Camera'];
+                    console.log('找到Back Camera:', cameraSpecs['Back Camera']);
                 }
             }
             
@@ -1653,33 +1697,73 @@
             const wirelessSpecs = {};
             
             if (!sheet) {
-                return wirelessSpecs; // 返回空对象如果没有WS工作表
+                return wirelessSpecs;
             }
             
-            // 检查R2到R10的位置来查找WLAN和PAN
-            for (let row = 2; row <= 10; row++) {
-                const rCell = `R${row}`;
-                const eCell = `E${row}`;
-                const lCell = `L${row}`;
+            // 找到关键列的位置
+            let wsTypeCol = null;
+            let elementDescCol = null;
+            let wsOnPlanACol = null;
+            let wsStandardCol = null;
+            
+            // 扫描第1行找到列标题
+            for (let col = 1; col <= 50; col++) {
+                const colLetter = getColumnLetter(col);
+                const headerCell = sheet[`${colLetter}1`];
+                if (headerCell) {
+                    const headerValue = String(headerCell.v).trim().toUpperCase().replace(/\s+/g, '');
+                    if (headerValue === 'WSTYPE') wsTypeCol = colLetter;
+                    if (headerValue === 'ELEMENTDESC' || headerValue === 'ELEMENT_DESC' || headerValue === 'IELEMENT_DESC') elementDescCol = colLetter;
+                    if (headerValue === 'WSONPLANA') wsOnPlanACol = colLetter;
+                    if (headerValue === 'WSSTANDARD') wsStandardCol = colLetter;
+                }
+            }
+            
+            // 遍历数据行
+            for (let row = 2; row <= 20; row++) {
+                if (!wsTypeCol || !elementDescCol) {
+                    break;
+                }
                 
-                const rValue = sheet[rCell] ? String(sheet[rCell].v).trim().toUpperCase() : '';
-                const eValue = sheet[eCell] ? String(sheet[eCell].v).trim() : '';
-                const lValue = sheet[lCell] ? String(sheet[lCell].v).trim() : '';
+                const wsTypeValue = sheet[`${wsTypeCol}${row}`] ? String(sheet[`${wsTypeCol}${row}`].v).trim().toUpperCase() : '';
+                const elementDescValue = sheet[`${elementDescCol}${row}`] ? String(sheet[`${elementDescCol}${row}`].v).trim() : '';
                 
-                if (rValue === 'WLAN') {
+                if (wsTypeValue === 'WLAN') {
+                    // Wireless - 使用Element Desc列作为显示值
+                    const wsOnPlanAValue = wsOnPlanACol && sheet[`${wsOnPlanACol}${row}`] ? 
+                        String(sheet[`${wsOnPlanACol}${row}`].v).trim() : '';
+                    
                     wirelessSpecs['Wireless'] = {
-                        value: eValue,
-                        cell: eCell
+                        value: elementDescValue,  // 显示Element Desc列的值
+                        cell: `${elementDescCol}${row}`,
+                        technicalValue: wsOnPlanAValue  // 技术参数值，用于检验
                     };
-                } else if (rValue === 'PAN') {
+                    
+                } else if (wsTypeValue === 'PAN') {
+                    // Bluetooth - 使用Element Desc列作为显示值
+                    const wsStandardValue = wsStandardCol && sheet[`${wsStandardCol}${row}`] ? 
+                        String(sheet[`${wsStandardCol}${row}`].v).trim() : '';
+                    
                     wirelessSpecs['Bluetooth'] = {
-                        value: lValue,
-                        cell: lCell
+                        value: elementDescValue,  // 显示Element Desc列的值
+                        cell: `${elementDescCol}${row}`,
+                        technicalValue: wsStandardValue  // 技术参数值，用于检验
                     };
                 }
             }
             
             return wirelessSpecs;
+        }
+
+        // 辅助函数：将列号转换为列字母
+        function getColumnLetter(col) {
+            let letter = '';
+            while (col > 0) {
+                const remainder = (col - 1) % 26;
+                letter = String.fromCharCode(65 + remainder) + letter;
+                col = Math.floor((col - 1) / 26);
+            }
+            return letter;
         }
 
        function matchTechSpecs(baselineSpecs, testSpecs, sheetPP, cameraSpecs, wirelessSpecs, sheetPOR, sheetPRC, sheetMEM, sheetHD, testWorkbook, productInfo) {
@@ -1699,34 +1783,39 @@
                     return;
                 }
                 
-                // 处理Camera特殊情况 - 从CAM工作表而不是OBJECT-ELEMENT中读取
+                // 处理Camera特殊情况
                 if ((attrName === 'Front Camera' || attrName === 'Back Camera' || attrName === 'Back') && cameraSpecs) {
                     if (cameraSpecs[attrName]) {
-                        testSpec = cameraSpecs[attrName];
+                        testSpec = cameraSpecs[attrName];  // 使用CAM表的Element Desc列作为显示值
                         isMatched = true;
-                        // 对Camera进行特殊检验，同时传递OBJECT-ELEMENT中的CAM值用于MBG检查
-                        const objectElementCamValue = testSpecs['CAM'] ? testSpecs['CAM'].value : null;
-                        checkResult = checkCamera(baselineSpec.value, testSpec.value, objectElementCamValue);
+                        
+                        // 使用技术参数值进行检验
+                        const technicalValue = cameraSpecs[attrName].technicalValue || cameraSpecs[attrName].value;
+                        
+                        // Camera检验：传递技术参数值和Element Desc值（用于MBG检查）
+                        checkResult = checkCamera(baselineSpec.value, technicalValue, cameraSpecs[attrName].value);
                     } else {
-                        checkResult = { isValid: false, message: '未在CAM工作表中找到对应的Camera数据' };
+                        checkResult = { isValid: false, message: `未在CAM工作表中找到对应的${attrName}数据` };
                     }
-                // 处理Bluetooth和Wireless特殊情况 - 从WS工作表而不是OBJECT-ELEMENT中读取
+                // 处理Bluetooth和Wireless特殊情况
                 } else if ((attrName === 'Bluetooth' || attrName === 'Wireless') && wirelessSpecs) {
                     if (wirelessSpecs[attrName]) {
-                        testSpec = wirelessSpecs[attrName];
+                        testSpec = wirelessSpecs[attrName];  // 使用WS表的Element Desc列作为显示值
                         isMatched = true;
-                        // 对Bluetooth使用专门的检验函数，对Wireless使用专门的检验函数
+                        
+                        // 使用技术参数值进行检验
+                        const technicalValue = wirelessSpecs[attrName].technicalValue || wirelessSpecs[attrName].value;
+                        
                         if (attrName === 'Bluetooth') {
-                            // 传递OBJECT-ELEMENT中的WS值用于MBG检查
-                            const objectElementWsValue = testSpecs['WS'] ? testSpecs['WS'].value : null;
-                            checkResult = checkBluetooth(baselineSpec.value, testSpec.value, objectElementWsValue);
+                            // Bluetooth检验：传递技术参数值和Element Desc值（用于MBG检查）
+                            checkResult = checkBluetooth(baselineSpec.value, technicalValue, wirelessSpecs[attrName].value);
                         } else {
-                            checkResult = checkWireless(baselineSpec.value, testSpec.value);
+                            // Wireless检验
+                            checkResult = checkWireless(baselineSpec.value, technicalValue);
                         }
                     } else {
                         checkResult = { isValid: false, message: '未在WS工作表中找到对应的Bluetooth/Wireless数据' };
                     }
-                // 处理Color特殊情况 - 从POR的M2和PP的T2比较
                 } else if (attrName === 'Color' || attrName.includes('Color')) {
                     if (sheetPP) {
                         checkResult = checkColor(baselineSpec.value, sheetPP);
