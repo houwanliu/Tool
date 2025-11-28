@@ -1381,8 +1381,8 @@
                     }
                     
                     // 4. 提取测试规格数据 (从对应列读取)
-                    const testSpecs = extractTestSpecsForColumn(sheetTest, productInfo.column);
-                    
+                    const testSpecs = extractTestSpecsForColumn(sheetTest, productInfo.column, sheetPP);
+
                     // 5. 提取Camera数据
                     const cameraSpecs = extractCameraSpecs(sheetCAM);
                     
@@ -1574,19 +1574,17 @@
             return specs;
         }
 
-        // 从指定列提取测试规格数据
-        function extractTestSpecsForColumn(sheet, column) {
+        function extractTestSpecsForColumn(sheet, column, sheetPP = null) {  // 添加 sheetPP 参数
             const specs = {};
             
             console.log(`开始从列${column}提取测试规格`);
             
-            // 从第7行开始读取(第6行是产品名称),直到遇到#EOF
             let row = 7;
             
             while (true) {
                 const typeCell = `B${row}`;
-                const valueCell = `C${row}`; // 改为始终从C列读取值,而不是从指定列读取
-                const markerCell = `${column}${row}`; // 用指定列来判断是否有标记
+                const valueCell = `C${row}`;
+                const markerCell = `${column}${row}`;
                 
                 const typeName = sheet[typeCell] ? String(sheet[typeCell].v).trim() : '';
                 const typeValue = sheet[valueCell] ? String(sheet[valueCell].v).trim() : '';
@@ -1599,19 +1597,49 @@
                     break;
                 }
                 
-                // 只有当指定列有标记(如X)时,才收集这一行的数据
                 if (markerValue) {
-                    specs[typeName] = {
-                        value: typeValue,
-                        cell: valueCell, // 实际值在C列
-                        markerCell: markerCell // 标记在指定列
-                    };
-                    console.log(`收集规格: ${typeName} = "${typeValue}" (标记列${markerCell}="${markerValue}")`);
+                    // ⭐ 新增：当类型是PP时的特殊处理
+                    if (typeName === 'PP' && sheetPP) {
+                        const ppData = extractPPDimensionData(sheetPP);
+                        
+                        // 只在第一次遇到PP时处理,避免重复
+                        if (!specs[typeName]) {
+                            specs[typeName] = {
+                                value: ppData.displayValue,
+                                rawData: ppData,
+                                cell: 'PP工作表',
+                                markerCell: markerCell,
+                                row: row
+                            };
+                            console.log(`从PP工作表提取数据: ${ppData.displayValue}`);
+                        }
+                    } else {
+                        // 原有逻辑保持不变
+                        if (specs[typeName]) {
+                            if (!Array.isArray(specs[typeName])) {
+                                specs[typeName] = [specs[typeName]];
+                            }
+                            specs[typeName].push({
+                                value: typeValue,
+                                cell: valueCell,
+                                markerCell: markerCell,
+                                row: row
+                            });
+                            console.log(`添加重复规格: ${typeName} = "${typeValue}"`);
+                        } else {
+                            specs[typeName] = {
+                                value: typeValue,
+                                cell: valueCell,
+                                markerCell: markerCell,
+                                row: row
+                            };
+                            console.log(`收集规格: ${typeName} = "${typeValue}"`);
+                        }
+                    }
                 }
                 
                 row++;
                 
-                // 防止无限循环
                 if (row > 1000) {
                     console.log('超过最大行数,停止读取');
                     break;
@@ -1622,6 +1650,7 @@
             
             return specs;
         }
+
         function extractCameraSpecs(sheet) {
             const cameraSpecs = {};
             
@@ -1828,7 +1857,21 @@
                         checkResult = { isValid: false, message: '未找到PP工作表，无法进行Color检验' };
                     }
                 } else if (abbreviation && testSpecs[abbreviation]) {
-                    testSpec = testSpecs[abbreviation];
+                    // 检查是否有多个相同类型的规格
+                    const specData = testSpecs[abbreviation];
+                    const isMultipleSpecs = Array.isArray(specData);
+                    
+                    if (isMultipleSpecs) {
+                        // 有多个相同类型的规格,合并显示
+                        testSpec = {
+                            value: specData.map((s, idx) => `[${idx + 1}] ${s.value}`).join('\n'),
+                            cell: specData.map((s, idx) => `[${idx + 1}] ${s.cell}`).join(', '),
+                            isMultiple: true,
+                            specs: specData
+                        };
+                    } else {
+                        testSpec = specData;
+                    }
                     isMatched = true;
                     
                     // 对Weight、Dimension和Processor进行特殊检验
@@ -1859,7 +1902,84 @@
                     } else if (attrName === 'OS' || attrName.includes('OS')) {
                         checkResult = checkOS(baselineSpec.value, testSpec.value);
                     } else if (attrName === 'Display' || attrName.includes('Display')) {
-                        checkResult = checkDisplay(baselineSpec.value, testSpec.value);
+                        // Display检验 - 需要特殊处理多个显示屏的情况
+                        if (testSpec.isMultiple) {
+                            // 有多个显示屏,需要解析基准值中的多个显示屏
+                            const baselineDisplays = parseMultipleDisplays(baselineSpec.value);
+                            const testDisplays = testSpec.specs;
+                            
+                            console.log('基准显示屏数量:', baselineDisplays.length);
+                            console.log('测试显示屏数量:', testDisplays.length);
+                            
+                            // 检查数量是否匹配
+                            if (baselineDisplays.length !== testDisplays.length) {
+                                checkResult = {
+                                    isValid: true,
+                                    isMatch: false,
+                                    message: `Display数量不匹配:基准有${baselineDisplays.length}个显示屏,测试有${testDisplays.length}个显示屏`,
+                                    baselineDisplays: baselineDisplays,
+                                    testDisplays: testDisplays.map((s, idx) => ({
+                                        index: idx + 1,
+                                        value: s.value,
+                                        cell: s.cell
+                                    }))
+                                };
+                            } else {
+                                // 数量匹配,逐个检验
+                                const displayCheckResults = [];
+                                let allMatch = true;
+                                
+                                baselineDisplays.forEach((baselineDisplay, idx) => {
+                                    // 尝试找到最佳匹配的测试显示屏
+                                    let bestMatch = null;
+                                    let bestMatchScore = 0;
+                                    let bestMatchResult = null;
+                                    
+                                    testDisplays.forEach((testDisplay, testIdx) => {
+                                        const individualCheck = checkDisplay(baselineDisplay.text, testDisplay.value);
+                                        
+                                        // 计算匹配分数(如果匹配就是1,不匹配就是0)
+                                        const score = (individualCheck.isValid && individualCheck.isMatch) ? 1 : 0;
+                                        
+                                        if (score > bestMatchScore) {
+                                            bestMatchScore = score;
+                                            bestMatch = testDisplay;
+                                            bestMatchResult = individualCheck;
+                                        }
+                                    });
+                                    
+                                    displayCheckResults.push({
+                                        baselineIndex: idx + 1,
+                                        baselineName: baselineDisplay.name,
+                                        baselineText: baselineDisplay.text,
+                                        testValue: bestMatch ? bestMatch.value : '未找到匹配',
+                                        testCell: bestMatch ? bestMatch.cell : '-',
+                                        checkResult: bestMatchResult,
+                                        isMatch: bestMatchResult && bestMatchResult.isValid && bestMatchResult.isMatch
+                                    });
+                                    
+                                    if (!bestMatchResult || !bestMatchResult.isMatch) {
+                                        allMatch = false;
+                                    }
+                                });
+                                
+                                // 生成综合检验结果
+                                const passedCount = displayCheckResults.filter(r => r.isMatch).length;
+                                checkResult = {
+                                    isValid: true,
+                                    isMatch: allMatch,
+                                    message: allMatch 
+                                        ? `Display检验通过:所有${baselineDisplays.length}个显示屏都匹配`
+                                        : `Display检验失败:只有${passedCount}/${baselineDisplays.length}个显示屏匹配`,
+                                    multipleDisplays: displayCheckResults,
+                                    detailMessage: displayCheckResults.map(d => 
+                                        `[${d.baselineName}] ${d.isMatch ? '✓ 匹配' : '✗ 不匹配'}: ${d.checkResult ? d.checkResult.message : '未检验'}`
+                                    ).join('; ')
+                                };
+                            }
+                        } else {
+                            checkResult = checkDisplay(baselineSpec.value, testSpec.value);
+                        }
                     } else if (attrName === 'Storage' || attrName.includes('Storage')) {
                         if (sheetHD) {
                             checkResult = checkStorage(baselineSpec.value, testSpec.value, sheetHD);
@@ -2141,9 +2261,9 @@
                 const hasOpenClosed = /open|closed/i.test(baselineStr);
                 
                 if (hasOpenClosed) {
-                    return checkFoldableDimension(baselineStr, sheetPP);
+                    return checkFoldableDimensionWithPPData(baselineStr, sheetPP);
                 } else {
-                    return checkStandardDimension(baselineStr, sheetPP);
+                    return checkStandardDimensionWithPPData(baselineStr, sheetPP);
                 }
                 
             } catch (error) {
@@ -2151,163 +2271,249 @@
             }
         }
         
-        // 标准设备尺寸检验函数
-        function checkStandardDimension(baselineStr, sheetPP) {
-            console.log('处理标准设备尺寸');
+        function checkStandardDimensionWithPPData(baselineStr, ppRawData) {
+            console.log('使用PP数据处理标准设备尺寸');
             
-            // 找到"mm"的位置，只处理mm之前的内容
-            let mmIndex = baselineStr.toLowerCase().indexOf('mm');
-            let processString = mmIndex !== -1 ? baselineStr.substring(0, mmIndex + 2) : baselineStr;
-            console.log('处理的字符串（到mm为止）:', processString);
+            // 提取基准值中的尺寸 - 假设格式是 Height x Width x Depth
+            const dimensionMatch = baselineStr.match(/(\d+(?:\.\d+)?)\s*[xX×]\s*(\d+(?:\.\d+)?)\s*[xX×]\s*(\d+(?:\.\d+)?)/);
             
-            // 从处理后的字符串中提取尺寸（格式：数字 x 数字 x 数字 mm）
-            const dimensionMatch = processString.match(/(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*mm/i);
             if (!dimensionMatch) {
-                // 如果没找到完整格式，尝试只匹配数字部分
-                const numbersMatch = processString.match(/(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)/i);
-                if (!numbersMatch) {
-                    return { isValid: false, message: `基准值格式无效，需要"长 x 宽 x 厚"格式。当前值: "${processString}"` };
-                }
-                // 使用数字匹配的结果
-                var [, length, width, thickness] = numbersMatch;
-                console.log('使用数字匹配模式');
-            } else {
-                var [, length, width, thickness] = dimensionMatch;
-                console.log('使用完整mm匹配模式');
+                return { isValid: false, message: '基准值格式无效，无法提取尺寸' };
             }
             
-            const lengthValue = parseFloat(length);
-            const widthValue = parseFloat(width);
-            const thicknessValue = parseFloat(thickness);
-            
-            console.log(`提取的尺寸: 长=${lengthValue}, 宽=${widthValue}, 厚=${thicknessValue}`);
-            
-            // 从PP工作表读取N2, AD2, I2的值
-            const n2Cell = sheetPP['N2'];
-            const ad2Cell = sheetPP['AD2'];
-            const i2Cell = sheetPP['I2'];
-            
-            let ppValues = {
-                length: n2Cell ? (typeof n2Cell.v === 'number' ? n2Cell.v : parseFloat(String(n2Cell.v).match(/(\d+(?:\.\d+)?)/)?.[1] || 0)) : null,
-                width: ad2Cell ? (typeof ad2Cell.v === 'number' ? ad2Cell.v : parseFloat(String(ad2Cell.v).match(/(\d+(?:\.\d+)?)/)?.[1] || 0)) : null,
-                thickness: i2Cell ? (typeof i2Cell.v === 'number' ? i2Cell.v : parseFloat(String(i2Cell.v).match(/(\d+(?:\.\d+)?)/)?.[1] || 0)) : null
+            const baselineDims = {
+                height: parseFloat(dimensionMatch[1]),
+                width: parseFloat(dimensionMatch[2]),
+                depth: parseFloat(dimensionMatch[3])
             };
             
-            console.log('PP工作表的值:', ppValues);
+            console.log('基准尺寸:', baselineDims);
+            console.log('PP数据:', ppRawData.standard);
             
-            // 检查匹配情况
-            const lengthMatch = ppValues.length !== null && Math.abs(lengthValue - ppValues.length) <= 0.1;
-            const widthMatch = ppValues.width !== null && Math.abs(widthValue - ppValues.width) <= 0.1;
-            const thicknessMatch = ppValues.thickness !== null && Math.abs(thicknessValue - ppValues.thickness) <= 0.1;
-            
-            const allMatch = lengthMatch && widthMatch && thicknessMatch;
-            
-            let message = '';
-            if (allMatch) {
-                message = `尺寸全部匹配 (提取自: "${processString}")`;
-            } else {
-                const mismatches = [];
-                if (!lengthMatch) mismatches.push(`长度(${lengthValue} vs ${ppValues.length || 'N/A'})`);
-                if (!widthMatch) mismatches.push(`宽度(${widthValue} vs ${ppValues.width || 'N/A'})`);
-                if (!thicknessMatch) mismatches.push(`厚度(${thicknessValue} vs ${ppValues.thickness || 'N/A'})`);
-                message = `尺寸不匹配: ${mismatches.join(', ')} (提取自: "${processString}")`;
-            }
+            const result = compareDimensionsDetailed(baselineDims, ppRawData.standard, 'Standard');
             
             return {
                 isValid: true,
-                isMatch: allMatch,
-                convertedValues: {
-                    length: lengthValue,
-                    width: widthValue,
-                    thickness: thicknessValue
-                },
-                ppValues: ppValues,
-                message: message,
-                processedString: processString,
-                originalString: baselineStr,
-                ppCells: `N2: ${ppValues.length || 'N/A'}mm, AD2: ${ppValues.width || 'N/A'}mm, I2: ${ppValues.thickness || 'N/A'}mm`
+                isMatch: result.isMatch,
+                message: result.detailMessage || result.message,
+                baseline: baselineDims,
+                ppData: ppRawData.standard,
+                heightMatch: result.heightMatch,
+                widthMatch: result.widthMatch,
+                depthMatch: result.depthMatch
             };
         }
         
-        // 折叠设备尺寸检验函数
-        function checkFoldableDimension(baselineStr, sheetPP) {
-            console.log('处理折叠设备尺寸');
-            
-            // 解析Open和Closed尺寸
-            const openPattern = /open\s*([\d\s.×x]+mm)/i;
-            const closedPattern = /closed\s*([\d\s.×x]+mm)/i;
-            
+        function checkFoldableDimensionWithPPData(baselineStr, ppRawData) {
+            console.log('使用PP数据处理折叠设备尺寸');
+            console.log('基准字符串:', baselineStr);
+            console.log('PP原始数据:', ppRawData);
+
+            // 工具:从PP数据对象中提取三个尺寸值并排序
+            function extractPPDimensions(ppDataObj) {
+                if (!ppDataObj) return null;
+                const dims = [ppDataObj.height, ppDataObj.width, ppDataObj.depth].filter(d => d !== null);
+                return dims.length === 3 ? dims.sort((a, b) => a - b) : null;
+            }
+
+            // 解析基准值 - 格式: "Open 73.99 x 171.30 x 7.25mm Closed 88.08 x 73.99 x 15.85mm"
+            // 提取Open部分的三个数字
+            const openPattern = /open\s+([\d.]+)\s*x\s*([\d.]+)\s*x\s*([\d.]+)\s*mm/i;
+            // 提取Closed部分的三个数字
+            const closedPattern = /closed\s+([\d.]+)\s*x\s*([\d.]+)\s*x\s*([\d.]+)\s*mm/i;
+
             const openMatch = baselineStr.match(openPattern);
             const closedMatch = baselineStr.match(closedPattern);
-            
-            console.log('Open匹配:', openMatch);
-            console.log('Closed匹配:', closedMatch);
-            
-            // 查找PP工作表中的Open PP和Close PP数据
-            const ppData = findPPData(sheetPP);
-            console.log('找到的PP数据:', ppData);
-            
+
+            console.log('Open匹配结果:', openMatch);
+            console.log('Closed匹配结果:', closedMatch);
+
             let results = [];
             let allMatch = true;
-            
-            // 检查Open尺寸
-            if (openMatch && ppData.open) {
-                const openDimensions = extractDimensionsFromString(openMatch[1]);
-                if (openDimensions) {
-                    const openResult = compareDimensions(openDimensions, ppData.open, 'Open');
-                    results.push(openResult);
-                    if (!openResult.isMatch) allMatch = false;
+
+            // ========== 处理 Open ==========
+            if (openMatch) {
+                if (ppRawData.open) {
+                    // 基准值的三个尺寸(排序后)
+                    const baseOpenDims = [
+                        parseFloat(openMatch[1]),
+                        parseFloat(openMatch[2]),
+                        parseFloat(openMatch[3])
+                    ].sort((a, b) => a - b);
+
+                    // PP数据的三个尺寸(排序后)
+                    const ppOpenDims = extractPPDimensions(ppRawData.open);
+
+                    console.log('Open基准尺寸(排序):', baseOpenDims);
+                    console.log('Open PP尺寸(排序):', ppOpenDims);
+
+                    if (ppOpenDims) {
+                        const isMatch = baseOpenDims.length === ppOpenDims.length &&
+                                      baseOpenDims.every((val, idx) => Math.abs(val - ppOpenDims[idx]) < 0.01);
+
+                        results.push({
+                            state: 'Open',
+                            isMatch: isMatch,
+                            detailMessage: isMatch
+                                ? `Open匹配 (${baseOpenDims.join(' × ')}mm)`
+                                : `Open不匹配 (基准: ${baseOpenDims.join(' × ')}, PP: ${ppOpenDims.join(' × ')})`,
+                            baseline: baseOpenDims,
+                            pp: ppOpenDims
+                        });
+
+                        if (!isMatch) allMatch = false;
+                    } else {
+                        results.push({
+                            state: 'Open',
+                            isMatch: false,
+                            detailMessage: 'Open PP数据不完整'
+                        });
+                        allMatch = false;
+                    }
                 } else {
-                    results.push({ state: 'Open', isMatch: false, message: 'Open尺寸格式无效' });
+                    results.push({
+                        state: 'Open',
+                        isMatch: false,
+                        detailMessage: '测试数据中未找到Open尺寸'
+                    });
                     allMatch = false;
                 }
-            } else if (openMatch && !ppData.open) {
-                results.push({ state: 'Open', isMatch: false, message: '未找到Open PP数据' });
-                allMatch = false;
-            } else if (!openMatch && ppData.open) {
-                results.push({ state: 'Open', isMatch: false, message: '基准值中未找到Open尺寸' });
-                allMatch = false;
             }
-            
-            // 检查Closed尺寸
-            if (closedMatch && ppData.closed) {
-                const closedDimensions = extractDimensionsFromString(closedMatch[1]);
-                if (closedDimensions) {
-                    const closedResult = compareDimensions(closedDimensions, ppData.closed, 'Closed');
-                    results.push(closedResult);
-                    if (!closedResult.isMatch) allMatch = false;
+
+            // ========== 处理 Closed ==========
+            if (closedMatch) {
+                if (ppRawData.closed) {
+                    // 基准值的三个尺寸(排序后)
+                    const baseClosedDims = [
+                        parseFloat(closedMatch[1]),
+                        parseFloat(closedMatch[2]),
+                        parseFloat(closedMatch[3])
+                    ].sort((a, b) => a - b);
+
+                    // PP数据的三个尺寸(排序后)
+                    const ppClosedDims = extractPPDimensions(ppRawData.closed);
+
+                    console.log('Closed基准尺寸(排序):', baseClosedDims);
+                    console.log('Closed PP尺寸(排序):', ppClosedDims);
+
+                    if (ppClosedDims) {
+                        const isMatch = baseClosedDims.length === ppClosedDims.length &&
+                                      baseClosedDims.every((val, idx) => Math.abs(val - ppClosedDims[idx]) < 0.01);
+
+                        results.push({
+                            state: 'Closed',
+                            isMatch: isMatch,
+                            detailMessage: isMatch
+                                ? `Closed匹配 (${baseClosedDims.join(' × ')}mm)`
+                                : `Closed不匹配 (基准: ${baseClosedDims.join(' × ')}, PP: ${ppClosedDims.join(' × ')})`,
+                            baseline: baseClosedDims,
+                            pp: ppClosedDims
+                        });
+
+                        if (!isMatch) allMatch = false;
+                    } else {
+                        results.push({
+                            state: 'Closed',
+                            isMatch: false,
+                            detailMessage: 'Closed PP数据不完整'
+                        });
+                        allMatch = false;
+                    }
                 } else {
-                    results.push({ state: 'Closed', isMatch: false, message: 'Closed尺寸格式无效' });
+                    results.push({
+                        state: 'Closed',
+                        isMatch: false,
+                        detailMessage: '测试数据中未找到Closed尺寸'
+                    });
                     allMatch = false;
                 }
-            } else if (closedMatch && !ppData.closed) {
-                results.push({ state: 'Closed', isMatch: false, message: '未找到Close PP数据' });
-                allMatch = false;
-            } else if (!closedMatch && ppData.closed) {
-                results.push({ state: 'Closed', isMatch: false, message: '基准值中未找到Closed尺寸' });
-                allMatch = false;
+            }
+
+            // ========== 汇总消息 ==========
+                let message = '';
+                if (allMatch && results.length > 0) {
+                    message = '折叠设备尺寸全部匹配: ' + results.map(r => r.detailMessage).join('; ');
+                } else {
+                    const failures = results.filter(r => !r.isMatch);
+                    // if (failures.length > 0) {
+                    //    message = '折叠设备尺寸不匹配: ' + failures.map(r => r.detailMessage).join('; ');
+                    // } else {
+                    //     message = '未找到有效的折叠设备尺寸数据';
+                    // }
+                }
+
+                console.log('最终检验结果:', { isMatch: allMatch, message, results });
+
+                return {
+                    isValid: true,
+                    isMatch: allMatch,
+                    message: message,
+                    originalString: baselineStr,
+                    results: results,
+                    ppData: ppRawData
+                };
+            }
+
+        // 详细比对尺寸（逐个比对高度、宽度、深度）
+        function compareDimensionsDetailed(baseline, ppData, state) {
+            const tolerance = 0.1;
+            
+            console.log(`${state}状态 - 基准值:`, baseline);
+            console.log(`${state}状态 - PP数据:`, ppData);
+            
+            // 首先检查单位
+            if (!ppData.unitsValid) {
+                return {
+                    state: state,
+                    isMatch: false,
+                    message: `${state}单位错误`,
+                    detailMessage: `${state}单位必须为mm: HEIGHT=${ppData.heightUnit}, WIDTH=${ppData.widthUnit}, DEPTH=${ppData.depthUnit}`,
+                    baseline: baseline,
+                    ppData: ppData
+                };
             }
             
-            // 生成汇总消息
+            // 逐个比对
+            const heightMatch = ppData.height !== null && Math.abs(baseline.height - ppData.height) <= tolerance;
+            const widthMatch = ppData.width !== null && Math.abs(baseline.width - ppData.width) <= tolerance;
+            const depthMatch = ppData.depth !== null && Math.abs(baseline.depth - ppData.depth) <= tolerance;
+            
+            const allMatch = heightMatch && widthMatch && depthMatch;
+            
+            // 生成详细信息
+            let details = [];
+            if (!heightMatch) {
+                details.push(`高度不匹配(基准${baseline.height}mm vs 测试${ppData.height || 'N/A'}mm)`);
+            }
+            if (!widthMatch) {
+                details.push(`宽度不匹配(基准${baseline.width}mm vs 测试${ppData.width || 'N/A'}mm)`);
+            }
+            if (!depthMatch) {
+                details.push(`深度不匹配(基准${baseline.depth}mm vs 测试${ppData.depth || 'N/A'}mm)`);
+            }
+            
             let message = '';
-            if (allMatch && results.length > 0) {
-                message = `折叠设备尺寸全部匹配: ${results.map(r => r.state).join(', ')}状态`;
+            let detailMessage = '';
+            
+            if (allMatch) {
+                message = `${state}状态尺寸匹配`;
+                detailMessage = `${state}[H:${baseline.height}mm ✓, W:${baseline.width}mm ✓, D:${baseline.depth}mm ✓]`;
             } else {
-                const failures = results.filter(r => !r.isMatch);
-                if (failures.length > 0) {
-                    message = `折叠设备尺寸不匹配: ${failures.map(r => `${r.state}(${r.message})`).join(', ')}`;
-                } else {
-                    message = '未找到有效的折叠设备尺寸数据';
-                }
+                message = `${state}状态尺寸不匹配`;
+                detailMessage = `${state}[${details.join(', ')}]`;
             }
             
             return {
-                isValid: true,
+                state: state,
                 isMatch: allMatch,
                 message: message,
-                originalString: baselineStr,
-                results: results,
-                ppData: ppData
+                detailMessage: detailMessage,
+                baseline: baseline,
+                ppData: ppData,
+                heightMatch: heightMatch,
+                widthMatch: widthMatch,
+                depthMatch: depthMatch,
+                ppCells: ppData.cells
             };
         }
         
@@ -2351,6 +2557,139 @@
             if (typeof value === 'number') return value;
             const match = String(value).match(/(\d+(?:\.\d+)?)/);
             return match ? parseFloat(match[1]) : null;
+        }
+
+        function extractPPDimensionData(sheetPP) {
+            console.log('开始从PP工作表提取尺寸数据');
+            
+            // 查找Open PP和Close PP的数据
+            const ppData = { open: null, closed: null, standard: null };
+            
+            // 扫描PP工作表，查找包含"Open PP"和"Close PP"的行
+            for (let row = 1; row <= 50; row++) {
+                for (let col of ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J']) {
+                    const cell = sheetPP[`${col}${row}`];
+                    if (cell && cell.v) {
+                        const cellValue = String(cell.v).toLowerCase();
+                        
+                        if (cellValue.includes('open pp') || (cellValue.includes('open') && cellValue.includes('pp'))) {
+                            // 找到Open PP，读取同行的尺寸数据
+                            ppData.open = extractDimensionFromRow(sheetPP, row, 'Open');
+                            console.log('找到Open PP数据:', ppData.open);
+                        } else if (cellValue.includes('close pp') || cellValue.includes('closed pp') || 
+                                (cellValue.includes('close') && cellValue.includes('pp'))) {
+                            // 找到Close PP，读取同行的尺寸数据
+                            ppData.closed = extractDimensionFromRow(sheetPP, row, 'Closed');
+                            console.log('找到Closed PP数据:', ppData.closed);
+                        }
+                    }
+                }
+            }
+            
+            // 如果没有找到Open/Closed，尝试读取标准设备的数据（第2行）
+            if (!ppData.open && !ppData.closed) {
+                ppData.standard = extractDimensionFromRow(sheetPP, 2, 'Standard');
+                console.log('提取标准设备数据:', ppData.standard);
+            }
+            
+            // 生成显示值
+            let displayValue = '';
+            if (ppData.open) {
+                displayValue += `Open: ${ppData.open.displayText}`;
+            }
+            if (ppData.closed) {
+                if (displayValue) displayValue += ', ';
+                displayValue += `Closed: ${ppData.closed.displayText}`;
+            }
+            if (ppData.standard) {
+                displayValue = ppData.standard.displayText;
+            }
+            
+            return {
+                displayValue: displayValue || '(未找到PP数据)',
+                isFoldable: !!(ppData.open || ppData.closed),
+                isStandard: !!ppData.standard,
+                open: ppData.open,
+                closed: ppData.closed,
+                standard: ppData.standard
+            };
+        }
+
+        // 新增：从指定行提取尺寸数据的函数
+        function extractDimensionFromRow(sheetPP, row, state) {
+            // 查找列标题所在的行（通常是第1行）
+            let depthCol = null, heightCol = null, widthCol = null;
+            let depthUnitCol = null, heightUnitCol = null, widthUnitCol = null;
+            
+            // 扫描第1行找到对应的列
+            for (let col = 1; col <= 50; col++) {
+                const colLetter = getColumnLetter(col);
+                const headerCell = sheetPP[`${colLetter}1`];
+                if (headerCell) {
+                    const headerValue = String(headerCell.v).trim().toUpperCase().replace(/\s+/g, '');
+                    
+                    if (headerValue === 'DEPTH_MET' || headerValue === 'DEPTH') depthCol = colLetter;
+                    if (headerValue === 'HEIGHT_MET' || headerValue === 'HEIGHT') heightCol = colLetter;
+                    if (headerValue === 'WIDTH_MET' || headerValue === 'WIDTH') widthCol = colLetter;
+                    if (headerValue === 'DEPTH_METUNITS' || headerValue === 'DEPTHUNITS') depthUnitCol = colLetter;
+                    if (headerValue === 'HEIGHT_METUNITS' || headerValue === 'HEIGHTUNITS') heightUnitCol = colLetter;
+                    if (headerValue === 'WIDTH_METUNITS' || headerValue === 'WIDTHUNITS') widthUnitCol = colLetter;
+                }
+            }
+            
+            console.log(`${state}状态 - 找到的列:`, {
+                depth: depthCol,
+                height: heightCol,
+                width: widthCol,
+                depthUnit: depthUnitCol,
+                heightUnit: heightUnitCol,
+                widthUnit: widthUnitCol
+            });
+            
+            if (!depthCol || !heightCol || !widthCol) {
+                console.log(`${state}状态 - 未找到完整的尺寸列`);
+                return null;
+            }
+            
+            // 读取数据
+            const depth = sheetPP[`${depthCol}${row}`] ? extractNumber(sheetPP[`${depthCol}${row}`].v) : null;
+            const height = sheetPP[`${heightCol}${row}`] ? extractNumber(sheetPP[`${heightCol}${row}`].v) : null;
+            const width = sheetPP[`${widthCol}${row}`] ? extractNumber(sheetPP[`${widthCol}${row}`].v) : null;
+            
+            // 读取单位
+            const depthUnit = depthUnitCol && sheetPP[`${depthUnitCol}${row}`] ? 
+                String(sheetPP[`${depthUnitCol}${row}`].v).trim().toLowerCase() : null;
+            const heightUnit = heightUnitCol && sheetPP[`${heightUnitCol}${row}`] ? 
+                String(sheetPP[`${heightUnitCol}${row}`].v).trim().toLowerCase() : null;
+            const widthUnit = widthUnitCol && sheetPP[`${widthUnitCol}${row}`] ? 
+                String(sheetPP[`${widthUnitCol}${row}`].v).trim().toLowerCase() : null;
+            
+            console.log(`${state}状态 - 提取的值:`, {
+                depth, height, width,
+                depthUnit, heightUnit, widthUnit
+            });
+            
+            // 验证单位
+            const unitsValid = (!depthUnit || depthUnit === 'mm') && 
+                            (!heightUnit || heightUnit === 'mm') && 
+                            (!widthUnit || widthUnit === 'mm');
+            
+            if (!unitsValid) {
+                console.warn(`${state}状态 - 单位验证失败:`, { depthUnit, heightUnit, widthUnit });
+            }
+            
+            return {
+                depth: depth,
+                height: height,
+                width: width,
+                depthUnit: depthUnit || 'mm',
+                heightUnit: heightUnit || 'mm',
+                widthUnit: widthUnit || 'mm',
+                unitsValid: unitsValid,
+                row: row,
+                displayText: `${height || '?'}mm(H) x ${width || '?'}mm(W) x ${depth || '?'}mm(D)`,
+                cells: `行${row}: HEIGHT=${height}${heightUnit || 'mm'}, WIDTH=${width}${widthUnit || 'mm'}, DEPTH=${depth}${depthUnit || 'mm'}`
+            };
         }
         
         // 从尺寸字符串中提取长宽高
@@ -2397,159 +2736,133 @@
             };
         }
 
-        // 处理器检验函数
         function checkProcessor(baselineValue, sheetPRC) {
             try {
                 if (!baselineValue) {
-                    return { isValid: false, message: '缺少基准处理器数据' };
+                    return { isValid: false, isMatch: false, message: "缺少基准处理器数据" };
                 }
-                
                 if (!sheetPRC) {
-                    return { isValid: false, message: '未找到PRC工作表' };
+                    return { isValid: false, isMatch: false, message: "未找到PRC工作表" };
                 }
-                
+
                 const baselineStr = String(baselineValue).trim();
-                console.log('基准Processor值:', baselineStr);
-                
-                // 需要检查的字段配置
-                const checkFields = [
-                    { name: 'PROCMFR (制造商)', cellKey: 'W1', cellValue: 'W2' },
-                    { name: 'SERIES (系列)', cellKey: 'F1', cellValue: 'F2' },
-                    { name: 'SKU', cellKey: 'E1', cellValue: 'E2' },
-                    { name: 'PROCCLKSPD (时钟速度)', cellKey: 'T1', cellValue: 'T2' },
-                    { name: 'BRANDCODEF (品牌代码)', cellKey: 'K1', cellValue: 'K2' }
-                ];
-                
-                let allChecks = [];
-                let allPassed = true;
-                
-                // 检查每个字段
-                checkFields.forEach(field => {
-                    const keyCell = sheetPRC[field.cellKey];
-                    const valueCell = sheetPRC[field.cellValue];
-                    
-                    const keyText = keyCell ? String(keyCell.v || '').trim() : '';
-                    const valueText = valueCell ? String(valueCell.v || '').trim() : '';
-                    
-                    console.log(`检查${field.name}: ${field.cellKey}="${keyText}", ${field.cellValue}="${valueText}"`);
-                    
-                    let checkResult = {
-                        fieldName: field.name,
-                        keyCell: field.cellKey,
-                        valueCell: field.cellValue,
-                        keyText: keyText,
-                        valueText: valueText,
-                        isValid: false,
-                        found: false
-                    };
-                    
-                    // 检查key是否匹配预期值
-                    let expectedKey = '';
-                    if (field.cellKey === 'W1') expectedKey = 'PROCMFR';
-                    else if (field.cellKey === 'F1') expectedKey = 'SERIES';
-                    else if (field.cellKey === 'E1') expectedKey = 'SKU';
-                    else if (field.cellKey === 'T1') expectedKey = 'PROCCLKSPD';
-                    else if (field.cellKey === 'K1') expectedKey = 'BRANDCODEF';
-                    
-                    if (keyText.toUpperCase() !== expectedKey) {
-                        checkResult.isValid = false;
-                        checkResult.message = `${field.cellKey}单元格应为"${expectedKey}"，实际为"${keyText}"`;
-                        allPassed = false;
-                    } else if (!valueText) {
-                        checkResult.isValid = false;
-                        checkResult.message = `${field.cellValue}单元格为空`;
-                        allPassed = false;
-                    } else {
-                        // 特殊处理BRANDCODEF字段：K2的值必须是MBG
-                        if (field.cellKey === 'K1') {
-                            const found = valueText.toUpperCase() === 'MBG';
-                            checkResult.isValid = true;
-                            checkResult.found = found;
-                            
-                            if (found) {
-                                checkResult.message = `✓ "${valueText}" 匹配要求的"MBG"`;
-                            } else {
-                                checkResult.message = `✗ "${valueText}" 不匹配要求的"MBG"`;
-                                allPassed = false;
-                            }
-                        } else {
-                            // 其他字段：使用严格匹配而不是包含匹配
-                            let found = false;
-                            
-                            // 将基准值按空格、逗号、斜杠等分隔符分割成tokens
-                            const baselineTokens = baselineStr.split(/[\s,/\-_()]+/).map(t => t.trim().toLowerCase()).filter(t => t.length > 0);
-                            const testValueLower = valueText.toLowerCase().trim();
-                            
-                            console.log(`处理器字段检验 - 字段: ${field.name}, 测试值: "${valueText}", 基准tokens: [${baselineTokens.join(', ')}]`);
-                            
-                            // 检查测试值是否与任何基准token完全匹配
-                            found = baselineTokens.includes(testValueLower);
-                            
-                            // 如果严格匹配失败，对于SKU字段不进行数字标准化匹配，其他数字字段才进行
-                            if (!found && /^\d+(\.\d+)?$/.test(valueText) && field.cellKey !== 'E1') {
-                                // 提取所有数字（包括小数）
-                                const baselineNumbers = baselineStr.match(/\d+\.?\d*/g) || [];
-                                const testNumbers = valueText.match(/\d+\.?\d*/g) || [];
-                                
-                                // 标准化数字格式（去除末尾的0）
-                                const normalizeNumber = (num) => {
-                                    const parsed = parseFloat(num);
-                                    return parsed.toString();
-                                };
-                                
-                                const normalizedBaselineNumbers = baselineNumbers.map(normalizeNumber);
-                                const normalizedTestNumbers = testNumbers.map(normalizeNumber);
-                                
-                                // 检查测试值中的数字是否在基准值的数字中存在
-                                found = normalizedTestNumbers.length > 0 && 
-                                       normalizedTestNumbers.every(testNum => 
-                                           normalizedBaselineNumbers.includes(testNum)
-                                       );
-                                
-                                console.log(`数字标准化匹配 - 基准数字: [${normalizedBaselineNumbers.join(', ')}], 测试数字: [${normalizedTestNumbers.join(', ')}], 匹配结果: ${found}`);
-                            }
-                            
-                            checkResult.isValid = true;
-                            checkResult.found = found;
-                            
-                            if (found) {
-                                checkResult.message = `✓ "${valueText}" 严格匹配基准Processor中的token`;
-                            } else {
-                                checkResult.message = `✗ "${valueText}" 在基准Processor中未找到严格匹配 (基准tokens: [${baselineTokens.join(', ')}])`;
-                                allPassed = false;
-                            }
-                        }
-                    }
-                    
-                    allChecks.push(checkResult);
-                });
-                
-                // 生成详细报告
-                let detailMessage = allChecks.map(check => 
-                    `${check.fieldName}(${check.keyCell}→${check.valueCell}): ${check.message}`
-                ).join('; ');
-                
-                let summaryMessage = '';
-                if (allPassed) {
-                    summaryMessage = '处理器检验通过：所有字段都在基准值中找到匹配';
-                } else {
-                    const failedCount = allChecks.filter(check => !check.found || !check.isValid).length;
-                    summaryMessage = `处理器检验失败：${failedCount}/${checkFields.length}个字段未通过检验`;
+
+                // 读取 PRC 表格字段
+                const processorType = sheetPRC["V2"] ? String(sheetPRC["V2"].v || "").trim() : "";
+                const clkSpeed = sheetPRC["T2"] ? String(sheetPRC["T2"].v || "").trim() : "";
+                const clkUnit = sheetPRC["U2"] ? String(sheetPRC["U2"].v || "").trim() : "";
+
+                let itemResults = [];   // 存储每个子项的结果
+                let allPassed = true;   // 最终结果
+
+                // =============================
+                // ① PROCESSORTYPE 模糊关键字匹配
+                // =============================
+
+                function extractTokens(str) {
+                    return str
+                        .toLowerCase()
+                        .replace(/[^a-z0-9\+\.]/gi, " ")
+                        .split(/\s+/)
+                        .filter(t => t.length > 0);
                 }
-                
+
+                const baseTokens = extractTokens(baselineStr);
+                const testTokens = extractTokens(processorType);
+
+                // 自动识别“关键 tokens”规则：
+                // - 数字（如 8, 870, 8gen3）
+                // - 处理器系列关键字（snapdragon, dimensity, tensor, ryzen, core）
+                // - 重要修饰词（elite, gen, series）
+                const KEYWORDS = [
+                    "snapdragon", "dimensity", "tensor", "mediatek", "qualcomm",
+                    "elite", "gen", "series", "core", "ryzen", "exynos"
+                ];
+
+                const baseKeyTokens = baseTokens.filter(t => {
+                    return KEYWORDS.includes(t) || /^\d+(\.\d+)?$/.test(t);
+                });
+
+                // 只要所有关键 tokens 在测试值中出现 → 通过（方案 B）
+                const missingKeyTokens = baseKeyTokens.filter(t => !testTokens.includes(t));
+
+                let typePassed = missingKeyTokens.length === 0;
+
+                itemResults.push({
+                    field: "PROCESSORTYPE",
+                    passed: typePassed,
+                    detail: typePassed
+                        ? `PROCESSORTYPE 匹配成功（关键字全部匹配）`
+                        : `缺少关键字: ${missingKeyTokens.join(", ")}`
+                });
+
+                if (!typePassed) allPassed = false;
+
+
+                // =============================
+                // ② PROCCLKSPD 数字匹配（4.3 == 4.30）
+                // =============================
+                function normalizeNumber(numStr) {
+                    return parseFloat(numStr).toString();
+                }
+
+                const testClk = clkSpeed ? normalizeNumber(clkSpeed) : "";
+                const baseNumbers = baselineStr.match(/\d+(\.\d+)?/g) || [];
+                const normBaseNumbers = baseNumbers.map(normalizeNumber);
+
+                let clkPassed = normBaseNumbers.includes(testClk);
+
+                itemResults.push({
+                    field: "PROCCLKSPD",
+                    passed: clkPassed,
+                    detail: clkPassed
+                        ? `PROCCLKSPD 数字 ${clkSpeed} 匹配成功`
+                        : `基准 Processor 中未找到数字 ${clkSpeed}`
+                });
+
+                if (!clkPassed) allPassed = false;
+
+
+                // =============================
+                // ③ PROCCLKSPDUNITS 单位必须是 GHz
+                // =============================
+                let unitPassed = clkUnit.toLowerCase() === "ghz";
+
+                itemResults.push({
+                    field: "PROCCLKSPDUNITS",
+                    passed: unitPassed,
+                    detail: unitPassed
+                        ? `单位检查通过（GHz）`
+                        : `单位必须为 GHz（实际为 "${clkUnit}"）`
+                });
+
+                if (!unitPassed) allPassed = false;
+
+
+                // =============================
+                // 最终返回
+                // =============================
                 return {
                     isValid: true,
                     isMatch: allPassed,
-                    message: summaryMessage,
-                    detailMessage: detailMessage,
-                    checkResults: allChecks,
-                    baselineValue: baselineStr
+                    message: allPassed ? "处理器校验通过（全部子项匹配）" : "处理器校验失败",
+                    detailMessage: itemResults.map(r =>
+                        `${r.field}: ${r.passed ? "✓" : "✗"} ${r.detail}`
+                    ).join("； "),
+                    results: itemResults,
+                    baseline: baselineStr,
+                    testValues: {
+                        PROCESSORTYPE: processorType,
+                        PROCCLKSPD: clkSpeed,
+                        PROCCLKSPDUNITS: clkUnit
+                    }
                 };
-                
+
             } catch (error) {
-                return { isValid: false, message: `处理器检验错误: ${error.message}` };
+                return { isValid: false, isMatch: false, message: `处理器检验错误: ${error.message}` };
             }
         }
+
 
         // OS检验函数
         function checkOS(baselineValue, testValue) {
@@ -2664,6 +2977,78 @@
             } catch (error) {
                 return { isValid: false, message: `OS检验错误: ${error.message}` };
             }
+        }
+
+        // 解析基准值中的多个显示屏描述
+        function parseMultipleDisplays(baselineText) {
+            const displays = [];
+            
+            console.log('解析基准Display文本:', baselineText);
+            
+            // 常见的显示屏标识关键词
+            const displayKeywords = [
+                'main display',
+                'external display',
+                'cover display',
+                'inner display',
+                'outer display',
+                'primary display',
+                'secondary display'
+            ];
+            
+            // 将文本按行分割
+            const lines = baselineText.split('\n').map(line => line.trim()).filter(line => line.length > 0);
+            
+            // 尝试识别每个显示屏段落
+            let currentDisplay = null;
+            
+            lines.forEach(line => {
+                const lineLower = line.toLowerCase();
+                
+                // 检查是否是新的显示屏开始
+                let foundKeyword = null;
+                for (const keyword of displayKeywords) {
+                    if (lineLower.includes(keyword)) {
+                        foundKeyword = keyword;
+                        break;
+                    }
+                }
+                
+                if (foundKeyword) {
+                    // 保存之前的显示屏(如果有)
+                    if (currentDisplay) {
+                        displays.push(currentDisplay);
+                    }
+                    
+                    // 开始新的显示屏
+                    currentDisplay = {
+                        name: foundKeyword.replace('display', '').trim() || 'Display',
+                        text: line,
+                        lines: [line]
+                    };
+                } else if (currentDisplay) {
+                    // 继续当前显示屏的描述
+                    currentDisplay.text += '\n' + line;
+                    currentDisplay.lines.push(line);
+                }
+            });
+            
+            // 保存最后一个显示屏
+            if (currentDisplay) {
+                displays.push(currentDisplay);
+            }
+            
+            // 如果没有识别到关键词,当作单个显示屏处理
+            if (displays.length === 0) {
+                displays.push({
+                    name: 'Display',
+                    text: baselineText,
+                    lines: lines
+                });
+            }
+            
+            console.log('解析出的显示屏:', displays);
+            return displays;
         }
 
         // Display检验函数
@@ -3147,7 +3532,7 @@
                     let cleaned = token.toUpperCase();
                     
                     // 将 - 替换为空格
-                    cleaned = cleaned.replace(/-/g, ' ');
+                    cleaned = cleaned.replace(/[®™©℠-]/g, '');
                     
                     // 移除多余的空格并分割
                     return cleaned.trim().split(/\s+/).filter(t => t.length > 0);
