@@ -2739,130 +2739,113 @@
         function checkProcessor(baselineValue, sheetPRC) {
             try {
                 if (!baselineValue) {
-                    return { isValid: false, isMatch: false, message: "缺少基准处理器数据" };
+                    return { isValid: false, message: '缺少基准处理器数据' };
                 }
+
                 if (!sheetPRC) {
-                    return { isValid: false, isMatch: false, message: "未找到PRC工作表" };
+                    return { isValid: false, message: '未找到PRC工作表' };
                 }
 
-                const baselineStr = String(baselineValue).trim();
-
-                // 读取 PRC 表格字段
-                const processorType = sheetPRC["V2"] ? String(sheetPRC["V2"].v || "").trim() : "";
-                const clkSpeed = sheetPRC["T2"] ? String(sheetPRC["T2"].v || "").trim() : "";
-                const clkUnit = sheetPRC["U2"] ? String(sheetPRC["U2"].v || "").trim() : "";
-
-                let itemResults = [];   // 存储每个子项的结果
-                let allPassed = true;   // 最终结果
-
-                // =============================
-                // ① PROCESSORTYPE 模糊关键字匹配
-                // =============================
-
-                function extractTokens(str) {
-                    return str
-                        .toLowerCase()
-                        .replace(/[^a-z0-9\+\.]/gi, " ")
-                        .split(/\s+/)
-                        .filter(t => t.length > 0);
+                // 从PRC工作表找到PROCESSORTYPE列
+                let processorTypeCol = null;
+                let processorTypeValue = '';
+                
+                // 扫描第1行找到PROCESSORTYPE列
+                for (let col = 1; col <= 50; col++) {
+                    const colLetter = getColumnLetter(col);
+                    const headerCell = sheetPRC[`${colLetter}1`];
+                    if (headerCell) {
+                        const headerValue = String(headerCell.v).trim().toUpperCase().replace(/\s+/g, '');
+                        if (headerValue === 'PROCESSORTYPE') {
+                            processorTypeCol = colLetter;
+                            break;
+                        }
+                    }
+                }
+                
+                if (!processorTypeCol) {
+                    return { isValid: false, message: 'PRC工作表中未找到PROCESSORTYPE列' };
+                }
+                
+                // 读取PROCESSORTYPE列的第2行数据
+                const processorCell = sheetPRC[`${processorTypeCol}2`];
+                if (!processorCell) {
+                    return { isValid: false, message: `PRC工作表${processorTypeCol}2单元格为空` };
+                }
+                
+                processorTypeValue = String(processorCell.v).trim();
+                
+                if (!processorTypeValue) {
+                    return { isValid: false, message: 'PRC工作表PROCESSORTYPE字段为空' };
                 }
 
-                const baseTokens = extractTokens(baselineStr);
-                const testTokens = extractTokens(processorType);
+                // 统一清洗函数
+                const clean = (str) => str
+                    .toLowerCase()
+                    .normalize("NFKD")
+                    .replace(/[\u00AE\u2122]/g, "")
+                    .replace(/[^\w\s.-]/g, " ")
+                    .replace(/\s+/g, " ")
+                    .trim();
 
-                // 自动识别“关键 tokens”规则：
-                // - 数字（如 8, 870, 8gen3）
-                // - 处理器系列关键字（snapdragon, dimensity, tensor, ryzen, core）
-                // - 重要修饰词（elite, gen, series）
-                const KEYWORDS = [
-                    "snapdragon", "dimensity", "tensor", "mediatek", "qualcomm",
-                    "elite", "gen", "series", "core", "ryzen", "exynos"
-                ];
+                const baseClean = clean(baselineValue);
+                const testClean = clean(processorTypeValue);
 
-                const baseKeyTokens = baseTokens.filter(t => {
-                    return KEYWORDS.includes(t) || /^\d+(\.\d+)?$/.test(t);
+                // 提取关键词（过滤掉常见无意义词）
+                const extractKeywords = (str) =>
+                    str.split(/[\s\/-]+/)
+                    .filter(s =>
+                        s.length > 0 &&
+                        !["processor","mobile","platform","qualcomm"].includes(s)
+                    );
+
+                const baseKeys = extractKeywords(baseClean);
+                
+                // 🔥 新增：记录每个关键字的匹配情况
+                const matchDetails = [];
+                const missing = [];
+                
+                baseKeys.forEach(baseKey => {
+                    // 在测试值中查找这个关键字
+                    if (testClean.includes(baseKey)) {
+                        // 找到匹配的完整词
+                        const testWords = testClean.split(/\s+/);
+                        const matchedWord = testWords.find(word => word.includes(baseKey) || baseKey.includes(word));
+                        
+                        if (matchedWord) {
+                            matchDetails.push(`"${baseKey}" 匹配 "${matchedWord}"`);
+                        } else {
+                            matchDetails.push(`"${baseKey}" 已匹配`);
+                        }
+                    } else {
+                        missing.push(baseKey);
+                    }
                 });
 
-                // 只要所有关键 tokens 在测试值中出现 → 通过（方案 B）
-                const missingKeyTokens = baseKeyTokens.filter(t => !testTokens.includes(t));
-
-                let typePassed = missingKeyTokens.length === 0;
-
-                itemResults.push({
-                    field: "PROCESSORTYPE",
-                    passed: typePassed,
-                    detail: typePassed
-                        ? `PROCESSORTYPE 匹配成功（关键字全部匹配）`
-                        : `缺少关键字: ${missingKeyTokens.join(", ")}`
-                });
-
-                if (!typePassed) allPassed = false;
-
-
-                // =============================
-                // ② PROCCLKSPD 数字匹配（4.3 == 4.30）
-                // =============================
-                function normalizeNumber(numStr) {
-                    return parseFloat(numStr).toString();
+                if (missing.length === 0) {
+                    return { 
+                        isValid: true, 
+                        isMatch: true,
+                        message: `处理器匹配成功（${matchDetails.join('，')}）`,
+                        processorTypeCell: `${processorTypeCol}2`,
+                        processorTypeValue: processorTypeValue,
+                        matchedKeys: matchDetails
+                    };
                 }
 
-                const testClk = clkSpeed ? normalizeNumber(clkSpeed) : "";
-                const baseNumbers = baselineStr.match(/\d+(\.\d+)?/g) || [];
-                const normBaseNumbers = baseNumbers.map(normalizeNumber);
-
-                let clkPassed = normBaseNumbers.includes(testClk);
-
-                itemResults.push({
-                    field: "PROCCLKSPD",
-                    passed: clkPassed,
-                    detail: clkPassed
-                        ? `PROCCLKSPD 数字 ${clkSpeed} 匹配成功`
-                        : `基准 Processor 中未找到数字 ${clkSpeed}`
-                });
-
-                if (!clkPassed) allPassed = false;
-
-
-                // =============================
-                // ③ PROCCLKSPDUNITS 单位必须是 GHz
-                // =============================
-                let unitPassed = clkUnit.toLowerCase() === "ghz";
-
-                itemResults.push({
-                    field: "PROCCLKSPDUNITS",
-                    passed: unitPassed,
-                    detail: unitPassed
-                        ? `单位检查通过（GHz）`
-                        : `单位必须为 GHz（实际为 "${clkUnit}"）`
-                });
-
-                if (!unitPassed) allPassed = false;
-
-
-                // =============================
-                // 最终返回
-                // =============================
                 return {
                     isValid: true,
-                    isMatch: allPassed,
-                    message: allPassed ? "处理器校验通过（全部子项匹配）" : "处理器校验失败",
-                    detailMessage: itemResults.map(r =>
-                        `${r.field}: ${r.passed ? "✓" : "✗"} ${r.detail}`
-                    ).join("； "),
-                    results: itemResults,
-                    baseline: baselineStr,
-                    testValues: {
-                        PROCESSORTYPE: processorType,
-                        PROCCLKSPD: clkSpeed,
-                        PROCCLKSPDUNITS: clkUnit
-                    }
+                    isMatch: false,
+                    message: `处理器校验失败：测试字段缺少以下关键字 → ${missing.join(', ')}`,
+                    processorTypeCell: `${processorTypeCol}2`,
+                    processorTypeValue: processorTypeValue,
+                    missingKeys: missing
                 };
 
-            } catch (error) {
-                return { isValid: false, isMatch: false, message: `处理器检验错误: ${error.message}` };
+            } catch (err) {
+                return { isValid: false, message: '处理器检验异常：' + err.message };
             }
         }
-
 
         // OS检验函数
         function checkOS(baselineValue, testValue) {
