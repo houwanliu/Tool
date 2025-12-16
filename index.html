@@ -1355,15 +1355,34 @@
                     const b1 = sheetBaseline['B1'] ? sheetBaseline['B1'].v : '';
                     const c1 = sheetBaseline['C1'] ? sheetBaseline['C1'].v : '';
                     let baselineProductName = '';
+                    let valueColumn = 'C'; // 默认值列
+                    
+                    console.log('🔍 基准表第一行检查:');
+                    console.log('  B1 原始值:', b1);
+                    console.log('  B1 处理后:', String(b1).trim());
+                    console.log('  C1 原始值:', c1);
+                    console.log('  C1 处理后:', String(c1).trim());
                     
                     if (String(b1).trim() === 'Product Name') {
                         baselineProductName = String(c1).trim();
+                        valueColumn = 'C'; // B1是Product Name，值在C列
+                        console.log('  ✅ 检测到B1是Product Name，值列设为C');
                     } else if (String(c1).trim() === 'Product Name') {
                         baselineProductName = String(b1).trim();
+                        valueColumn = 'B'; // C1是Product Name，值在B列
+                        console.log('  ✅ 检测到C1是Product Name，值列设为B');
+                    } else {
+                        console.log('  ⚠️ 警告：B1和C1都不是Product Name！');
+                        console.log('  B1 === "Product Name"?', String(b1).trim() === 'Product Name');
+                        console.log('  C1 === "Product Name"?', String(c1).trim() === 'Product Name');
+                        // 默认使用C列
+                        valueColumn = 'C';
                     }
                     
-                    // 2. 提取基准规格数据(基准表始终使用C列作为值列)
-                    const valueColumn = String(b1).trim() === 'Product Name' ? 'C' : 'B';
+                    console.log('  📍 最终值列:', valueColumn);
+                    console.log('  📍 产品名称:', baselineProductName);
+                    
+                    // 2. 提取基准规格数据
                     const baselineSpecs = extractBaselineSpecsForColumn(sheetBaseline, valueColumn);
                     
                     // 3. 如果有Color属性且有POR工作表,从POR读取Color基准值
@@ -5052,8 +5071,6 @@
                             <span style="font-size: 1.2rem;">📦 产品 ${productIndex + 1}: ${productResult.partNumber}</span>
                             <br>
                             <small style="opacity: 0.9;">${productResult.productName}</small>
-                            <br>
-                            <small style="opacity: 0.9;">基准表列: ${productResult.column}</small>
                         </div>
                         <div style="background: rgba(255, 255, 255, 0.2); padding: 8px 16px; border-radius: 20px; font-size: 0.9rem;">
                             通过率: ${passRate}%
