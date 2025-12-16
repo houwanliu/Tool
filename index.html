@@ -2290,8 +2290,12 @@
             }
         }
         
-        function checkStandardDimensionWithPPData(baselineStr, ppRawData) {
+        function checkStandardDimensionWithPPData(baselineStr, sheetPP) {
             console.log('使用PP数据处理标准设备尺寸');
+            
+            // 首先从PP工作表提取数据
+            const ppRawData = extractPPDimensionData(sheetPP);
+            console.log('提取的PP数据:', ppRawData);
             
             // 提取基准值中的尺寸 - 假设格式是 Height x Width x Depth
             const dimensionMatch = baselineStr.match(/(\d+(?:\.\d+)?)\s*[xX×]\s*(\d+(?:\.\d+)?)\s*[xX×]\s*(\d+(?:\.\d+)?)/);
@@ -2309,6 +2313,14 @@
             console.log('基准尺寸:', baselineDims);
             console.log('PP数据:', ppRawData.standard);
             
+            // 检查是否成功提取了standard数据
+            if (!ppRawData.standard) {
+                return { 
+                    isValid: false, 
+                    message: '未能从PP工作表提取标准设备尺寸数据' 
+                };
+            }
+            
             const result = compareDimensionsDetailed(baselineDims, ppRawData.standard, 'Standard');
             
             return {
@@ -2323,10 +2335,13 @@
             };
         }
         
-        function checkFoldableDimensionWithPPData(baselineStr, ppRawData) {
+        function checkFoldableDimensionWithPPData(baselineStr, sheetPP) {
             console.log('使用PP数据处理折叠设备尺寸');
             console.log('基准字符串:', baselineStr);
-            console.log('PP原始数据:', ppRawData);
+            
+            // 首先从PP工作表提取数据
+            const ppRawData = extractPPDimensionData(sheetPP);
+            console.log('提取的PP原始数据:', ppRawData);
 
             // 工具:从PP数据对象中提取三个尺寸值并排序
             function extractPPDimensions(ppDataObj) {
@@ -4570,10 +4585,36 @@
                     };
                 }
                 
-                // 2. 处理基准值：将标点符号转换为空格
-                const normalizedBaseline = baselineStr.replace(/[^\w\s]/g, ' ').replace(/\s+/g, ' ').trim();
+                // 2. 标准化USB相关术语的函数
+                function normalizeUSBTerms(text) {
+                    // 统一USB-C、USB C、USBC等变体
+                    let normalized = text;
+                    
+                    // USB-C, USB C, USBC -> USB TYPE-C
+                    normalized = normalized.replace(/USB[-\s]?C\b/gi, 'USB TYPE-C');
+                    
+                    // USB-A, USB A, USBA -> USB TYPE-A
+                    normalized = normalized.replace(/USB[-\s]?A\b/gi, 'USB TYPE-A');
+                    
+                    // USB 2.0, USB2.0, USB-2.0 -> USB 2 0
+                    normalized = normalized.replace(/USB[-\s]?(\d+)\.(\d+)/gi, 'USB $1 $2');
+                    
+                    // USB 3.0, USB3.0, USB-3.0 -> USB 3 0
+                    normalized = normalized.replace(/USB[-\s]?(\d+)\.(\d+)/gi, 'USB $1 $2');
+                    
+                    return normalized;
+                }
                 
-                // 3. 分离数字和非数字token的函数
+                // 3. 标准化并处理基准值和测试值
+                const normalizedBaseline = normalizeUSBTerms(baselineStr).replace(/[^\w\s]/g, ' ').replace(/\s+/g, ' ').trim();
+                const normalizedTest = normalizeUSBTerms(testStr.replace(/MBG/gi, '')).replace(/[^\w\s]/g, ' ').replace(/\s+/g, ' ').trim();
+                
+                console.log('Port检验 - 原始基准值:', baselineStr);
+                console.log('Port检验 - 标准化基准值:', normalizedBaseline);
+                console.log('Port检验 - 原始测试值:', testStr);
+                console.log('Port检验 - 标准化测试值:', normalizedTest);
+                
+                // 4. 分离数字和非数字token的函数
                 function separateTokens(text) {
                     const tokens = text.split(/\s+/).filter(token => token.length > 0);
                     const numbers = [];
@@ -4604,11 +4645,16 @@
                     return { numbers, words, originalTokens: tokens };
                 }
                 
-                // 4. 处理baseline和test tokens
+                // 5. 处理baseline和test tokens
                 const baselineProcessed = separateTokens(normalizedBaseline);
-                const testProcessed = separateTokens(testStr.replace(/MBG/gi, '').trim());
+                const testProcessed = separateTokens(normalizedTest);
                 
-                // 5. 检查数字匹配
+                console.log('Port检验 - 基准单词:', baselineProcessed.words);
+                console.log('Port检验 - 测试单词:', testProcessed.words);
+                console.log('Port检验 - 基准数字:', baselineProcessed.numbers);
+                console.log('Port检验 - 测试数字:', testProcessed.numbers);
+                
+                // 6. 检查数字匹配
                 const missingNumbers = [];
                 const foundNumbers = [];
                 
@@ -4621,7 +4667,7 @@
                     }
                 });
                 
-                // 6. 检查单词匹配
+                // 7. 检查单词匹配
                 const missingWords = [];
                 const foundWords = [];
                 const rawTestTokens = testStr.split(/\s+/)
@@ -4636,13 +4682,13 @@
                     }
                 });
                 
-                // 7. 计算匹配结果
+                // 8. 计算匹配结果
                 const allNumbersFound = missingNumbers.length === 0;
                 const allWordsFound = missingWords.length === 0;
                 const allTokensFound = allNumbersFound && allWordsFound;
                 const isMatch = hasMBG && allTokensFound;
                 
-                // 8. 构造原始missing tokens用于显示
+                // 9. 构造原始missing tokens用于显示
                 const originalMissingTokens = [];
                 const originalFoundTokens = [];
                 
