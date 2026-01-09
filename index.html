@@ -493,8 +493,7 @@
 <body>
     <div class="container">
         <div class="header">
-            <h1>MBG表格QC检验工具</h1>
-            <p>支持基准表与检验表的智能数据对比</p>
+            <h1>Motorola QC Tool</h1>
         </div>
     
         <div class="tabs">
@@ -2315,6 +2314,7 @@
                         
                         // Camera检验:传递技术参数值和Element Desc值（用于MBG检查）
                         checkResult = checkCamera(baselineSpec.value, technicalValue, cameraSpecs[attrName].value);
+                        isMatched = checkResult.isValid && checkResult.isMatch;
                     } else {
                         checkResult = { isValid: false, message: `未在CAM工作表中找到对应的${attrName}数据` };
                     }
@@ -2322,7 +2322,7 @@
                 } else if ((attrName === 'Bluetooth' || attrName === 'Wireless') && wirelessSpecs) {
                     if (wirelessSpecs[attrName]) {
                         testSpec = wirelessSpecs[attrName];  // 使用WS表的Element Desc列作为显示值
-                        isMatched = true;
+                        isMatched = true
 
                         // 使用技术参数值进行检验
                         const technicalValue = wirelessSpecs[attrName].technicalValue || wirelessSpecs[attrName].value;
@@ -2331,10 +2331,12 @@
                             // === 改动1:确保传入完整的 WS 表对象，而不是单行值 ===
                             // 原来传的是 baselineSpec.value 或 wirelessSpecs[attrName]，新版 checkBluetooth 需要 sheetWS
                             checkResult = checkBluetooth(baselineSpec.value, sheetWS);
+                            isMatched = checkResult.isValid && checkResult.isMatch;
                         } else {
                             // Wireless检验
                             if (sheetWS) {
                                 checkResult = checkWireless(baselineSpec.value, sheetWS);
+                                isMatched = checkResult.isValid && checkResult.isMatch;
                             } else {
                                 checkResult = { isValid: false, message: '未找到WS工作表' };
                             }
@@ -2388,78 +2390,84 @@
                     } else if (attrName === 'Dimension' || attrName.includes('Dimension')) {
                         if (sheetPP) {
                             checkResult = checkDimension(baselineSpec.value, sheetPP);
+                            isMatched = checkResult.isValid && checkResult.isMatch;
                         } else {
                             checkResult = { isValid: false, message: '未找到PP工作表，无法进行尺寸检验' };
                         }
                     } else if (attrName === 'Processor' || attrName.includes('Processor')) {
                         if (sheetPRC) {
                             checkResult = checkProcessor(baselineSpec.value, sheetPRC);
-                            // 标记为已匹配，因为我们有专门的PRC工作表检验
-                            isMatched = true;
-                            testSpec = {
-                                value: testSpec.value, // 使用OBJECT-ELEMENT中PRC的值
-                                cell: testSpec.cell
-                            };
+                            isMatched = checkResult.isValid && checkResult.isMatch;
                         } else {
                             checkResult = { isValid: false, message: '未找到PRC工作表，无法进行处理器检验' };
                         }
                     } else if (attrName === 'OS' || attrName.includes('OS')) {
                         if (sheetOS) {
                             checkResult = checkOS(baselineSpec.value, sheetOS);
+                            isMatched = checkResult.isValid && checkResult.isMatch;
                         } else {
                             checkResult = { isValid: false, message: '未找到OS工作表' };
                         }
                     }else if (attrName === 'Display' || attrName.includes('Display')) {
                         if (sheetMON) {
                             checkResult = checkDisplay(baselineSpec.value, sheetMON);
+                            isMatched = checkResult.isValid && checkResult.isMatch;
                         } else {
                             checkResult = {isValid: false, message: '未找到MON工作表，无法进行Display检验'};
                         }
                     } else if (attrName === 'Storage' || attrName.includes('Storage')) {
                         if (sheetHD) {
                             checkResult = checkStorage(baselineSpec.value, sheetHD);
+                            isMatched = checkResult.isValid && checkResult.isMatch;
                         } else {
-                            checkResult = { isValid: false, message: '未找到HD工作表，无法进行存储检验' };
+                            checkResult = { isValid: false, message: '未找到HD工作表，无法进行存储检验' };  
                         }
                     } else if (attrName === 'Memory' || attrName.includes('Memory')) {
                         if (sheetMEM) {
                             checkResult = checkMemory(baselineSpec.value, sheetMEM);
+                            isMatched = checkResult.isValid && checkResult.isMatch;
                         } else {
                             checkResult = { isValid: false, message: '未找到MEM工作表，无法进行内存检验' };
                         }
                     } else if (attrName === 'Graphics' || attrName.includes('Graphics')) {
                         if (sheetGRA) {
                             checkResult = checkGraphics(baselineSpec.value, sheetGRA);
+                            isMatched = checkResult.isValid && checkResult.isMatch;
                         } else {
                             checkResult = { isValid: false, message: '未找到GRA工作表' };
                         }
                     } else if (attrName === 'Battery Life' || attrName.includes('Battery Life')) {
                         if (sheetTI) {
                             checkResult = checkBatteryLife(baselineSpec.value, sheetTI);
+                            isMatched = checkResult.isValid && checkResult.isMatch;
                         } else {
                             checkResult = { isValid: false, message: '未找到TI工作表' };
                         }
                     } else if (attrName === 'Port' || attrName.includes('Port')) {
                         if (sheetPORT) {
                             checkResult = checkPort(baselineSpec.value, sheetPORT);
+                            isMatched = checkResult.isValid && checkResult.isMatch;
                         } else {
-                            checkResult = { isValid: false, message: '未找到PORT工作表' };
+                            checkResult = { isValid: false, message: '未找到PORT工作表' };          
                         }
                     } else if (attrName === 'Audio' || attrName.includes('Audio')) {
                         if (sheetAUD) {
                             checkResult = checkAudio(baselineSpec.value, sheetAUD);
+                            isMatched = checkResult.isValid && checkResult.isMatch;
                         } else {
                             checkResult = { isValid: false, message: '未找到AUD工作表' };
                         }
                     } else if (attrName === 'Fingerprint Reader' || attrName.includes('Fingerprint Reader')) {
                         if (sheetSEC) {
                             checkResult = checkFingerprintReader(baselineSpec.value, sheetSEC);
+                            isMatched = checkResult.isValid && checkResult.isMatch;
                         } else {
                             checkResult = { isValid: false, message: '未找到SEC工作表' };
                         }
                     } else if (attrName === 'Warranty' || attrName.includes('Warranty')) {
                         if (sheetWAR) {
                             checkResult = checkWarranty(baselineSpec.value, sheetWAR);
+                            isMatched = checkResult.isValid && checkResult.isMatch;
                         } else {
                             checkResult = { isValid: false, message: '未找到WAR工作表' };
                         }
@@ -2488,35 +2496,45 @@
                 let isMatched = false;
                 let checkResult = null;
 
-                // 调用新版checkWhatsInTheBox，传入Part Number
-                checkResult = checkWhatsInTheBox(n2Value, sheetMM, productInfo.partNumber);
-
-                // 根据检验结果判断是否匹配
+                if (sheetMM && sheetObjectElement && productInfo.partNumber) {
+                checkResult = checkWhatsInTheBox(n2Value, sheetMM, sheetObjectElement, productInfo.partNumber);
                 isMatched = checkResult.isValid && checkResult.isMatch;
-                testSpec = testSpecs['MM'] || null;
+                
+                    testSpec = {
+                        value: checkResult.isValid 
+                            ? (checkResult.results && checkResult.results.length > 0
+                                ? checkResult.results.map(r => `${r.whatInTheBox}`).join(', ')
+                                : checkResult.message)
+                            : checkResult.message,
+                        cell: 'MM工作表'
+                    };
+                } else if (!sheetMM) {
+                    checkResult = { isValid: false, message: '未找到MM工作表' };
+                    isMatched = false;
+                    testSpec = { value: '未找到MM工作表', cell: '-' };
+                } else if (!sheetObjectElement) {
+                    checkResult = { isValid: false, message: '未找到OBJECT-ELEMENT工作表' };
+                    isMatched = false;
+                    testSpec = { value: '未找到OBJECT-ELEMENT工作表', cell: '-' };
+                } else {
+                    checkResult = { isValid: false, message: '缺少Part Number' };
+                    isMatched = false;
+                    testSpec = { value: '缺少Part Number', cell: '-' };
+                }
 
                 results.push({
                     attribute: "What's in the box",
                     abbreviation: 'MM',
                     baselineValue: n2Value,
                     baselineCell: 'POR N2',
-                    testValue: testSpec ? testSpec.value : (checkResult.testValue || '未找到'),
-                    testCell: testSpec ? testSpec.cell : '-',
+                    testValue: testSpec.value,
+                    testCell: testSpec.cell,
                     isMatched: isMatched,
                     checkResult: checkResult
                 });
             }
                     
-                // 添加Color的处理
-                // 使用findMatchingRowInPOR找到当前产品对应的POR行
-                console.log('========== 开始处理Color ==========');
-                console.log('productInfo完整对象:', productInfo);
-                console.log('productInfo.partNumber:', productInfo.partNumber);
-                console.log('productInfo.partNumber类型:', typeof productInfo.partNumber);
-                console.log('productInfo.partNumber长度:', productInfo.partNumber ? productInfo.partNumber.length : 'N/A');
                 const porRow = findMatchingRowInPOR(sheetPOR, productInfo.partNumber);
-                console.log('findMatchingRowInPOR返回:', porRow);
-                console.log('======================================');
                 
                 if (porRow) {
                     const mCell = sheetPOR[`M${porRow.row}`];
@@ -2533,12 +2551,12 @@
                         checkResult = checkColor(colorValue, sheetPP, sheetObjectElement, productInfo.partNumber);
 
                         // 判断是否匹配
-                        isMatched = checkResult.isValid && checkResult.isMatch;
+                        isMatched = true;
 
                         // testSpec 可以展示 PP 表中实际的 Color 或错误信息
                         testSpec = {
                             value: checkResult.isValid 
-                                ? (checkResult.results ? checkResult.results.map(r => `${r.elementId}: ${r.color} ${r.isMatch ? '✓' : '✗'}`).join(', ') : '未找到')
+                                ? (checkResult.results ? checkResult.results.map(r => `${r.color}`).join(', ') : '未找到')
                                 : checkResult.message,  // 显示详细错误信息
                             cell: 'PP工作表'
                         };
@@ -2705,7 +2723,7 @@
             
             if (allMatch) {
                 message = `${state}状态尺寸匹配`;
-                detailMessage = `${state}[H: ${baseline.height}mm ✓, W: ${baseline.width}mm ✓, D: ${baseline.depth}mm ✓]`;
+                detailMessage = `Dimension检验通过（H: ${baseline.height}mm ✓, W: ${baseline.width}mm ✓, D: ${baseline.depth}mm ✓）`;
             } else {
                 message = `${state}状态尺寸不匹配`;
                 detailMessage = `${state}[${details.join(', ')}]`;
@@ -3421,7 +3439,6 @@
                 let screenSizeCol = null;
                 let displayTypeCol = null;
                 
-                // 扫描第1行找到列标题
                 for (let col = 1; col <= 50; col++) {
                     const colLetter = getColumnLetter(col);
                     const headerCell = sheetMON[`${colLetter}1`];
@@ -3437,158 +3454,86 @@
                     return { isValid: false, message: `MON工作表中未找到必要的列 (Element NAME: ${nameCol}, SCREENSIZEVIEW_IN: ${screenSizeCol}, DISPLAYTYPE: ${displayTypeCol})` };
                 }
                 
-                // 读取第2行数据
-                const nameCell = sheetMON[`${nameCol}2`];
-                const screenSizeCell = sheetMON[`${screenSizeCol}2`];
-                const displayTypeCell = sheetMON[`${displayTypeCol}2`];
+                const nameValue = String(sheetMON[`${nameCol}2`].v).trim();
+                const screenSizeValue = sheetMON[`${screenSizeCol}2`].v;
+                const displayTypeValue = String(sheetMON[`${displayTypeCol}2`].v).trim();
                 
-                if (!nameCell) {
-                    return { isValid: false, message: `MON工作表${nameCol}2单元格为空` };
-                }
-                
-                if (!screenSizeCell) {
-                    return { isValid: false, message: `MON工作表${screenSizeCol}2单元格为空` };
-                }
-                
-                if (!displayTypeCell) {
-                    return { isValid: false, message: `MON工作表${displayTypeCol}2单元格为空` };
-                }
-                
-                const nameValue = String(nameCell.v).trim();
-                const screenSizeValue = screenSizeCell.v; // 数值，不trim
-                const displayTypeValue = String(displayTypeCell.v).trim();
-                
-                console.log('MON工作表 Name:', nameValue);
-                console.log('MON工作表 SCREENSIZEVIEW_IN:', screenSizeValue);
-                console.log('MON工作表 DISPLAYTYPE:', displayTypeValue);
-
-                
-                // 检查1: Name最后三个字符是否为MBG
+                // MBG 校验
                 const endsWithMBG = nameValue.slice(-3).toUpperCase() === 'MBG';
-                
                 if (!endsWithMBG) {
                     return {
                         isValid: true,
                         isMatch: false,
                         message: `MON工作表Name必须以"MBG"结尾，实际为"${nameValue}"`,
-                        nameValue: nameValue,
-                        screenSizeValue: screenSizeValue,
-                        displayTypeValue: displayTypeValue,
-                        endsWithMBG: false,
-                        screenSizeMatch: false,
-                        displayTypeMatch: false
+                        nameValue,
+                        screenSizeValue,
+                        displayTypeValue,
+                        endsWithMBG: false
                     };
                 }
                 
-                // 检查2: 从基准值中提取屏幕尺寸并严格匹配
+                // 屏幕尺寸校验
                 const sizeMatch = baselineStr.match(/(\d+(?:\.\d+)?)\s*(?:inch|inches|")/i);
-                let screenSizeMatches = false;
-                let extractedSize = null;
-                
-                if (sizeMatch) {
-                    extractedSize = parseFloat(sizeMatch[1]);
-                    // 严格数值匹配，不允许四舍五入
-                    screenSizeMatches = Math.abs(screenSizeValue - extractedSize) < 0.01;
-                } else {
-                    return {
-                        isValid: true,
-                        isMatch: false,
-                        message: '无法从基准值中提取屏幕尺寸',
-                        nameValue: nameValue,
-                        screenSizeValue: screenSizeValue,
-                        displayTypeValue: displayTypeValue,
-                        endsWithMBG: endsWithMBG,
-                        screenSizeMatch: false,
-                        displayTypeMatch: false
-                    };
+                if (!sizeMatch) {
+                    return { isValid: true, isMatch: false, message: '无法从基准值中提取屏幕尺寸' };
                 }
                 
+                const extractedSize = parseFloat(sizeMatch[1]);
+                const screenSizeMatches = Math.abs(screenSizeValue - extractedSize) < 0.01;
                 if (!screenSizeMatches) {
                     return {
                         isValid: true,
                         isMatch: false,
-                        message: `屏幕尺寸不匹配，基准值${extractedSize}" ≠ 测试值${screenSizeValue}"`,
-                        nameValue: nameValue,
-                        screenSizeValue: screenSizeValue,
-                        displayTypeValue: displayTypeValue,
-                        endsWithMBG: endsWithMBG,
-                        screenSizeMatch: false,
-                        displayTypeMatch: false,
-                        extractedSize: extractedSize
+                        message: `屏幕尺寸不匹配，基准值${extractedSize}" ≠ 测试值${screenSizeValue}"`
                     };
                 }
-                
-                // 检查3: 从基准值中提取关键指标并检查DISPLAYTYPE是否全部包含
+
+                // ====== 关键指标提取 ======
                 const keyIndicators = {
                     resolution: null,
                     tech: [],
                     refreshRate: null,
                     ppi: null,
-                    ratio: null,
                     brightness: null
                 };
                 
-                // 提取分辨率
+                // 分辨率（支持顺序对调）
                 const resMatch = baselineStr.match(/(\d+)\s*[x×]\s*(\d+)/i);
                 if (resMatch) {
-                    keyIndicators.resolution = `${resMatch[1]}x${resMatch[2]}`;
+                    keyIndicators.resolution = {
+                        a: resMatch[1],
+                        b: resMatch[2]
+                    };
                 }
                 
-                // 提取显示技术/面板类型 
-                const techPatterns = [
-                    /\b(AMOLED|OLED|LCD|LED|TDDI|IPS|TFT)\b/gi,
-                    /\b(Super\s+HD|FHD\+?|QHD\+?|HD\+?)\b/gi,
-                    /\b(Extreme\s+\w+)\b/gi
-                ];
-                techPatterns.forEach(pattern => {
-                    const matches = baselineStr.match(pattern);
-                    if (matches) {
-                        keyIndicators.tech.push(...matches);
-                    }
-                });
-                
-                // 提取刷新率
                 const refreshMatch = baselineStr.match(/(\d+)\s*Hz/i);
-                if (refreshMatch) {
-                    keyIndicators.refreshRate = refreshMatch[1] + 'Hz';
-                }
+                if (refreshMatch) keyIndicators.refreshRate = refreshMatch[1] + 'Hz';
                 
-                // 提取PPI
                 const ppiMatch = baselineStr.match(/(\d+)\s*ppi/i);
-                if (ppiMatch) {
-                    keyIndicators.ppi = ppiMatch[1] + 'ppi';
-                }
+                if (ppiMatch) keyIndicators.ppi = ppiMatch[1] + 'ppi';
                 
-                // 提取亮度
                 const brightnessMatch = baselineStr.match(/(\d+)\s*nits?/i);
-                if (brightnessMatch) {
-                    keyIndicators.brightness = brightnessMatch[1] + ' nits';
-                }
+                if (brightnessMatch) keyIndicators.brightness = brightnessMatch[1] + ' nits';
                 
-                // 检查所有关键指标是否都在DISPLAYTYPE中
                 const displayTypeLower = displayTypeValue.toLowerCase();
                 const missingIndicators = [];
                 const foundIndicators = [];
                 
-                const normalizeResolution = str =>String(str).toLowerCase().replace(/\s+/g, '').replace(/[×]/g, 'x');
-                
+                const normalize = str =>
+                    str.toLowerCase().replace(/\s+/g, '').replace(/[×]/g, 'x');
+
+                // ✅ 分辨率判断（顺序可交换）
                 if (keyIndicators.resolution) {
-                    if (normalizeResolution(displayTypeValue)
-                            .includes(normalizeResolution(keyIndicators.resolution))) {
-                        foundIndicators.push(`分辨率: ${keyIndicators.resolution}`);
+                    const { a, b } = keyIndicators.resolution;
+                    const res1 = normalize(`${a}x${b}`);
+                    const res2 = normalize(`${b}x${a}`);
+                    const displayNorm = normalize(displayTypeValue);
+                    
+                    if (displayNorm.includes(res1) || displayNorm.includes(res2)) {
+                        foundIndicators.push(`分辨率: ${a}x${b}`);
                     } else {
-                        missingIndicators.push(`分辨率: ${keyIndicators.resolution}`);
+                        missingIndicators.push(`分辨率: ${a}x${b}`);
                     }
-                }
-                
-                if (keyIndicators.tech.length > 0) {
-                    keyIndicators.tech.forEach(tech => {
-                        if (displayTypeLower.includes(tech.toLowerCase())) {
-                            foundIndicators.push(`显示技术: ${tech}`);
-                        } else {
-                            missingIndicators.push(`显示技术: ${tech}`);
-                        }
-                    });
                 }
                 
                 if (keyIndicators.refreshRate) {
@@ -3599,18 +3544,16 @@
                     }
                 }
                 
-                const normalizePPI = str =>str.toLowerCase().replace(/\s+/g, '');
-
-                if (normalizePPI(displayTypeValue)
-                        .includes(normalizePPI(keyIndicators.ppi))) {
-                    foundIndicators.push(`PPI: ${keyIndicators.ppi}`);
-                } else {
-                    missingIndicators.push(`PPI: ${keyIndicators.ppi}`);
+                if (keyIndicators.ppi) {
+                    if (normalize(displayTypeValue).includes(normalize(keyIndicators.ppi))) {
+                        foundIndicators.push(`PPI: ${keyIndicators.ppi}`);
+                    } else {
+                        missingIndicators.push(`PPI: ${keyIndicators.ppi}`);
+                    }
                 }
-
+                
                 if (keyIndicators.brightness) {
-                    const normalized = keyIndicators.brightness.replace(/nits?/i, 'nit');
-                    if (displayTypeLower.includes(normalized.toLowerCase()) || displayTypeLower.includes(keyIndicators.brightness.toLowerCase())) {
+                    if (displayTypeLower.includes(keyIndicators.brightness.toLowerCase())) {
                         foundIndicators.push(`亮度: ${keyIndicators.brightness}`);
                     } else {
                         missingIndicators.push(`亮度: ${keyIndicators.brightness}`);
@@ -3620,27 +3563,14 @@
                 const displayTypeMatches = missingIndicators.length === 0;
                 const isMatch = endsWithMBG && screenSizeMatches && displayTypeMatches;
                 
-                let message = '';
-                if (isMatch) {
-                    message = `Display检验通过（SCREENSIZEVIEW_IN: ${extractedSize}，DISPLAYTYPE: ${displayTypeValue}）`;
-                } else if (!displayTypeMatches) {
-                    message = `Display检验失败:DISPLAYTYPE缺少以下关键指标: ${missingIndicators.join(', ')}`;
-                }
-                
                 return {
                     isValid: true,
-                    isMatch: isMatch,
-                    message: message,
-                    nameValue: nameValue,
-                    screenSizeValue: screenSizeValue,
-                    displayTypeValue: displayTypeValue,
-                    endsWithMBG: endsWithMBG,
-                    screenSizeMatch: screenSizeMatches,
-                    displayTypeMatch: displayTypeMatches,
-                    extractedSize: extractedSize,
-                    foundIndicators: foundIndicators,
-                    missingIndicators: missingIndicators,
-                    keyIndicators: keyIndicators
+                    isMatch,
+                    message: isMatch
+                        ? `Display检验通过（SCREENSIZEVIEW_IN: ${extractedSize}，DISPLAYTYPE: ${displayTypeValue}）`
+                        : `Display检验失败:DISPLAYTYPE缺少以下关键指标: ${missingIndicators.join(', ')}`,
+                    foundIndicators,
+                    missingIndicators
                 };
                 
             } catch (error) {
@@ -3919,18 +3849,33 @@
                 
                 const baselineStr = String(baselineValue).trim();
                 console.log('基准Graphics值:', baselineStr);
-                
-                // 找到GRAPHIC_DESC列和Element Name列
+
+                // ====== 工具函数 ======
+                function normalizeText(str) {
+                    return str
+                        .toUpperCase()
+                        .replace(/-/g, ' ')        // 统一 - 和空格
+                        .replace(/GPU/g, '')       // 去 GPU
+                        .replace(/ARM/g, '')       // 去 ARM
+                        .replace(/\s+/g, ' ')
+                        .trim();
+                }
+
+                // ====== 找列 ======
                 let graphicDescCol = null;
                 let elementNameCol = null;
                 
-                // 扫描第1行找到列标题
                 for (let col = 1; col <= 50; col++) {
                     const colLetter = getColumnLetter(col);
                     const headerCell = sheetGRA[`${colLetter}1`];
                     if (headerCell) {
-                        const headerValue = String(headerCell.v).trim().toUpperCase().replace(/\s+/g, '');
-                        if (headerValue === 'GRAPHIC_DESC' || headerValue === 'GRAPHICDESC') graphicDescCol = colLetter;
+                        const headerValue = String(headerCell.v)
+                            .trim()
+                            .toUpperCase()
+                            .replace(/\s+/g, '');
+                        if (headerValue === 'GRAPHIC_DESC' || headerValue === 'GRAPHICDESC') {
+                            graphicDescCol = colLetter;
+                        }
                         if (headerValue === 'ELEMENTDESC' || headerValue === 'ELEMENT_DESC') {
                             elementNameCol = colLetter;
                         }
@@ -3938,65 +3883,61 @@
                 }
                 
                 if (!graphicDescCol || !elementNameCol) {
-                    return { isValid: false, message: `GRA工作表中未找到必要的列 (GRAPHIC_DESC: ${graphicDescCol}, Element列: ${elementNameCol})` };
+                    return {
+                        isValid: false,
+                        message: `GRA工作表中未找到必要的列 (GRAPHIC_DESC: ${graphicDescCol}, Element列: ${elementNameCol})`
+                    };
                 }
-                
-                // 读取第2行数据
-                const elementNameCell = sheetGRA[`${elementNameCol}2`];
-                const graphicDescCell = sheetGRA[`${graphicDescCol}2`];
-                
-                if (!elementNameCell) {
-                    return { isValid: false, message: `GRA工作表${elementNameCol}2单元格为空` };
-                }
-                
-                if (!graphicDescCell) {
-                    return { isValid: false, message: `GRA工作表${graphicDescCol}2单元格为空` };
-                }
-                
-                const elementNameValue = String(elementNameCell.v).trim();
-                const graphicDescValue = String(graphicDescCell.v).trim();
-                
+
+                // ====== 读取数据 ======
+                const elementNameValue = String(sheetGRA[`${elementNameCol}2`].v).trim();
+                const graphicDescValue = String(sheetGRA[`${graphicDescCol}2`].v).trim();
+
                 console.log('GRA工作表 Element Name:', elementNameValue);
                 console.log('GRA工作表 GRAPHIC_DESC:', graphicDescValue);
-                
-                // 检查1: Element Name最后三个字符是否为MBG
+
+                // ====== MBG 校验 ======
                 const endsWithMBG = elementNameValue.slice(-3).toUpperCase() === 'MBG';
-                
                 if (!endsWithMBG) {
                     return {
                         isValid: true,
                         isMatch: false,
                         message: `GRA工作表Element Name必须以"MBG"结尾，实际为"${elementNameValue}"`,
-                        elementNameValue: elementNameValue,
-                        graphicDescValue: graphicDescValue,
+                        elementNameValue,
+                        graphicDescValue,
                         endsWithMBG: false,
                         contentMatch: false
                     };
                 }
-                
-                // 检查2: GRAPHIC_DESC内容与基准表匹配
-                const contentMatch = graphicDescValue === baselineStr;
-                
+
+                // ====== 内容匹配（增强版） ======
+                const baselineNormalized = normalizeText(baselineStr);
+                const graphicDescNormalized = normalizeText(graphicDescValue);
+
+                const contentMatch =
+                    graphicDescNormalized.includes(baselineNormalized) ||
+                    baselineNormalized.includes(graphicDescNormalized);
+
                 const isMatch = endsWithMBG && contentMatch;
-                
+
                 let message = '';
                 if (isMatch) {
                     message = `Graphics检验通过（GRAPHIC_DESC: ${graphicDescValue}）`;
-                } else if (!contentMatch) {
+                } else {
                     message = `Graphics检验失败:GRAPHIC_DESC不匹配，基准值"${baselineStr}" ≠ 测试值"${graphicDescValue}"`;
                 }
-                
+
                 return {
                     isValid: true,
-                    isMatch: isMatch,
-                    message: message,
-                    elementNameValue: elementNameValue,
-                    graphicDescValue: graphicDescValue,
-                    endsWithMBG: endsWithMBG,
-                    contentMatch: contentMatch,
+                    isMatch,
+                    message,
+                    elementNameValue,
+                    graphicDescValue,
+                    endsWithMBG,
+                    contentMatch,
                     graCells: `Element Name (${elementNameCol}2): ${elementNameValue}, GRAPHIC_DESC (${graphicDescCol}2): ${graphicDescValue}`
                 };
-                
+
             } catch (error) {
                 return { isValid: false, message: `Graphics检验错误: ${error.message}` };
             }
@@ -4170,54 +4111,89 @@
                 }
 
                 const baselineStr = String(baselineValue).trim();
-                
-                // 找到AUDIO_DESC列和Element列
+
+                // ====== 工具函数 ======
+                const STOP_WORDS = new Set([
+                    'yes', 'no',
+                    'with', 'without',
+                    'and', 'or'
+                ]);
+
+                function normalizeText(str) {
+                    return str
+                        .toLowerCase()
+                        .replace(/®/g, '')        // 去商标符
+                        .replace(/[(),]/g, '')    // 去标点
+                        .replace(/\s+/g, ' ')
+                        .trim();
+                }
+
+                // ====== 找列 ======
                 let audioDescCol = null;
                 let elementNameCol = null;
                 for (let col = 1; col <= 50; col++) {
                     const colLetter = getColumnLetter(col);
                     const headerCell = sheetAUD[`${colLetter}1`];
                     if (headerCell) {
-                        const headerValue = String(headerCell.v).trim().toUpperCase().replace(/\s+/g, '');
-                        if (headerValue === 'AUDIO_DESC' || headerValue === 'AUDIODESC') audioDescCol = colLetter;
-                        if (['ELEMENTNAME','ELEMENT_NAME','IELEMENT_NAME','ELEMENTDESC','ELEMENT_DESC'].includes(headerValue)) {
+                        const headerValue = String(headerCell.v)
+                            .trim()
+                            .toUpperCase()
+                            .replace(/\s+/g, '');
+                        if (headerValue === 'AUDIO_DESC' || headerValue === 'AUDIODESC') {
+                            audioDescCol = colLetter;
+                        }
+                        if (['ELEMENTNAME','ELEMENT_NAME','IELEMENT_NAME','ELEMENTDESC','ELEMENT_DESC']
+                            .includes(headerValue)) {
                             elementNameCol = colLetter;
                         }
                     }
                 }
 
                 if (!audioDescCol || !elementNameCol) {
-                    return { isValid: false, message: `AUD工作表中未找到必要的列 (AUDIO_DESC: ${audioDescCol}, Element列: ${elementNameCol})` };
+                    return {
+                        isValid: false,
+                        message: `AUD工作表中未找到必要的列 (AUDIO_DESC: ${audioDescCol}, Element列: ${elementNameCol})`
+                    };
                 }
 
-                // 读取第2行数据
+                // ====== 读取数据 ======
                 const elementNameValue = String(sheetAUD[`${elementNameCol}2`].v).trim();
                 const audioDescValue = String(sheetAUD[`${audioDescCol}2`].v).trim();
 
-                // 检查MBG
+                // ====== MBG 校验 ======
                 const endsWithMBG = elementNameValue.slice(-3).toUpperCase() === 'MBG';
 
-                // 关键词覆盖率匹配
-                const baselineKeywords = baselineStr.split(/\s+/).map(k => k.toLowerCase()).filter(k => k); 
-                const audioDescNormalized = audioDescValue.toLowerCase().replace(/\s+/g, ' ');
+                // ====== 关键词覆盖率校验（增强版） ======
+                const baselineNormalized = normalizeText(baselineStr);
+                const audioDescNormalized = normalizeText(audioDescValue);
+
+                const baselineKeywords = baselineNormalized
+                    .split(' ')
+                    .filter(word => word && !STOP_WORDS.has(word));
 
                 let matchedCount = 0;
                 baselineKeywords.forEach(keyword => {
-                    if (audioDescNormalized.includes(keyword)) matchedCount++;
+                    if (audioDescNormalized.includes(keyword)) {
+                        matchedCount++;
+                    }
                 });
 
-                const coverage = matchedCount / baselineKeywords.length;
-                const contentMatch = coverage >= coverageThreshold;
+                const coverage = baselineKeywords.length === 0
+                    ? 1
+                    : matchedCount / baselineKeywords.length;
 
+                const contentMatch = coverage >= coverageThreshold;
                 const isMatch = endsWithMBG && contentMatch;
 
-                // 构建消息
+                // ====== 结果信息 ======
                 let message = '';
                 if (isMatch) {
                     message = `Audio检验通过（AUDIO_DESC: ${audioDescValue}）`;
                 } else {
-                    const missingKeywords = baselineKeywords.filter(k => !audioDescNormalized.includes(k));
-                    message = `Audio检验失败（关键词覆盖率 ${(coverage*100).toFixed(1)}%，缺失关键词: ${missingKeywords.join(', ')}）`;
+                    const missingKeywords = baselineKeywords.filter(
+                        k => !audioDescNormalized.includes(k)
+                    );
+                    message = `Audio检验失败（关键词覆盖率 ${(coverage * 100).toFixed(1)}%，缺失关键词: ${missingKeywords.join(', ')}）`;
                 }
 
                 return {
@@ -5305,7 +5281,7 @@
         }
 
         // What's in the box检验函数
-        function checkWhatsInTheBox(baselineValue, sheetMM, partNumber) {
+        function checkWhatsInTheBox(baselineValue, sheetMM, sheetObjectElement, partNumber) {
             try {
                 if (!baselineValue) {
                     return { isValid: false, message: "缺少What's in the box基准数据" };
@@ -5314,7 +5290,7 @@
                 const baselineStr = String(baselineValue).trim();
                 console.log("What's in the box检验基准值:", baselineStr);
 
-                // 1️⃣ 特殊情况:No XXX
+                // 1️⃣ 特殊情况：No XXX
                 if (baselineStr.toUpperCase().startsWith("NO")) {
                     console.log("基准值为No开头，MM表可不存在，直接判定通过");
                     return {
@@ -5326,70 +5302,215 @@
                     };
                 }
 
-                // 2️⃣ 基准值不是 No，必须有 MM 表
+                // 2️⃣ 基准值不是 No，必须有 MM 表和 OBJECT-ELEMENT 表
                 if (!sheetMM) {
                     return { isValid: false, isMatch: false, message: "未找到MM工作表" };
                 }
+                if (!sheetObjectElement) {
+                    return { isValid: false, message: '未找到OBJECT-ELEMENT工作表' };
+                }
+                if (!partNumber) {
+                    return { isValid: false, message: '缺少Part Number' };
+                }
 
-                // 3️⃣ 查找匹配的 Part Number
-                let row = 2;
-                let found = false;
-                let testValue = null;
-                let elementNameValue = null;
+                /* ===============================
+                3️⃣ 在 OBJECT-ELEMENT 表中查找 PN 列
+                =============================== */
+                let pnCol = null;
+                console.log('开始查找PN列，目标PN:', partNumber);
+                
+                for (let col = 1; col <= 200; col++) {
+                    const colLetter = getColumnLetter(col);
+                    const header = sheetObjectElement[`${colLetter}6`];
+                    if (!header || !header.v) continue;
 
-                while (true) {
-                    const eCell = `B${row}`; // Element Desc列
-                    const elementCell = `A${row}`; // Element Name列
-                    const whatCell = `C${row}`; // WHAT_INTHEBOX列，假设在C列
-                    const descCell = sheetMM[eCell];
-                    const elementCellObj = sheetMM[elementCell];
-                    const whatCellObj = sheetMM[whatCell];
+                    const headerText = String(header.v).trim().toUpperCase();
+                    const match = headerText.match(/\[([^\]]+)\]/);
+                    if (match) {
+                        if (match[1].toUpperCase() === partNumber.toUpperCase()) {
+                            pnCol = colLetter;
+                            console.log('✓ 找到PN列:', colLetter);
+                            break;
+                        }
+                    }
+                }
 
-                    if (!descCell) break; // 到空行停止
+                if (!pnCol) {
+                    console.log('✗ 未找到匹配的PN列');
+                    return {
+                        isValid: false,
+                        message: `OBJECT-ELEMENT表中未找到PN列: ${partNumber}`
+                    };
+                }
 
-                    const pn = String(descCell.v || "").trim();
-                    if (pn === partNumber) {
-                        testValue = whatCellObj ? String(whatCellObj.v || "").trim() : "";
-                        elementNameValue = elementCellObj ? String(elementCellObj.v || "").trim() : "";
-                        found = true;
-                        break;
+                /* ===============================
+                4️⃣ 查找关联的 MM Elements
+                =============================== */
+                const linkedMMs = [];
+
+                for (let row = 7; row <= 500; row++) {
+                    const typeCell = sheetObjectElement[`B${row}`];
+                    const elementIdCell = sheetObjectElement[`A${row}`];
+                    const pnCell = sheetObjectElement[`${pnCol}${row}`];
+
+                    if (!typeCell || !elementIdCell || !pnCell) continue;
+
+                    const type = String(typeCell.v).trim().toUpperCase();
+                    const pnFlag = String(pnCell.v).trim().toUpperCase();
+
+                    if (type === 'MM' && pnFlag === 'X') {
+                        const match = String(elementIdCell.v).match(/\[(\d+)\]/);
+                        const elementId = match ? match[1] : null;
+                        console.log(`找到MM Element: ${elementIdCell.v} -> ID: ${elementId}`);
+                        if (elementId) {
+                            linkedMMs.push({
+                                row,
+                                elementId
+                            });
+                        }
+                    }
+                }
+
+                if (linkedMMs.length === 0) {
+                    console.log('✗ 未找到关联的MM Elements');
+                    return {
+                        isValid: false,
+                        message: '该PN在OBJECT-ELEMENT表中未关联任何MM'
+                    };
+                }
+                
+                console.log(`✓ 找到 ${linkedMMs.length} 个关联的MM Elements:`, linkedMMs.map(p => p.elementId).join(', '));
+
+                /* ===============================
+                5️⃣ 在 MM 表中查找列标题
+                =============================== */
+                let elementDescCol = null;
+                let whatInTheBoxCol = null;
+                
+                for (let col = 1; col <= 50; col++) {
+                    const colLetter = getColumnLetter(col);
+                    const headerCell = sheetMM[`${colLetter}1`];
+                    if (headerCell) {
+                        const headerValue = String(headerCell.v).trim().toUpperCase().replace(/\s+/g, '');
+                        if (headerValue === 'ELEMENTDESC' || headerValue === 'ELEMENT_DESC') {
+                            elementDescCol = colLetter;
+                        }
+                        if (headerValue === 'WHAT_INTHEBOX') {
+                            whatInTheBoxCol = colLetter;
+                        }
+                    }
+                }
+                
+                if (!elementDescCol || !whatInTheBoxCol) {
+                    return { 
+                        isValid: false, 
+                        message: `MM工作表中未找到必要的列 (Element Desc: ${elementDescCol}, WHAT_INTHEBOX: ${whatInTheBoxCol})` 
+                    };
+                }
+
+                console.log('MM表列标题:', { elementDescCol, whatInTheBoxCol });
+
+                /* ===============================
+                6️⃣ 在 MM 表中用 Element ID 验证数据
+                =============================== */
+                const results = [];
+                let allMatch = true;
+
+                linkedMMs.forEach(mm => {
+                    let found = false;
+                    console.log(`在MM表中查找Element ID: ${mm.elementId}`);
+
+                    for (let row = 2; row <= 1000; row++) {
+                        const idCell = sheetMM[`A${row}`]; // Element ID
+                        if (!idCell) continue;
+
+                        const id = String(idCell.v).trim();
+                        if (id === mm.elementId) {
+                            found = true;
+                            console.log(`✓ 在MM表第${row}行找到Element ID: ${id}`);
+
+                            const elementDescCell = sheetMM[`${elementDescCol}${row}`];
+                            const whatInTheBoxCell = sheetMM[`${whatInTheBoxCol}${row}`];
+                            
+                            const elementDescValue = elementDescCell ? String(elementDescCell.v || '').trim() : '';
+                            const whatInTheBoxValue = whatInTheBoxCell ? String(whatInTheBoxCell.v || '').trim() : '';
+                            
+                            console.log(`  Element Desc: "${elementDescValue}"`);
+                            console.log(`  WHAT_INTHEBOX: "${whatInTheBoxValue}"`);
+
+                            // 检查 Element Desc 是否以 MBG 结尾
+                            const endsWithMBG = elementDescValue.slice(-3).toUpperCase() === 'MBG';
+                            
+                            // 检查 WHAT_INTHEBOX 是否匹配基准
+                            const contentMatch = whatInTheBoxValue === baselineStr;
+                            
+                            const isMatch = endsWithMBG && contentMatch;
+                            if (!isMatch) allMatch = false;
+
+                            results.push({
+                                elementId: id,
+                                row,
+                                elementDesc: elementDescValue,
+                                whatInTheBox: whatInTheBoxValue,
+                                endsWithMBG,
+                                contentMatch,
+                                isMatch
+                            });
+                            break;
+                        }
                     }
 
-                    row++;
-                    if (row > 1000) break;
-                }
+                    if (!found) {
+                        allMatch = false;
+                        results.push({
+                            elementId: mm.elementId,
+                            row: null,
+                            elementDesc: '',
+                            whatInTheBox: '',
+                            endsWithMBG: false,
+                            contentMatch: false,
+                            isMatch: false,
+                            error: '未在MM表中找到该Element ID'
+                        });
+                    }
+                });
 
-                if (!found) {
-                    return { isValid: false, isMatch: false, message: `MM表中未找到Part Number ${partNumber}` };
-                }
+                /* ===============================
+                7️⃣ 生成结果信息
+                =============================== */
+                let message = '';
 
-                // 4️⃣ 检查 Element Name 是否以 MBG 结尾
-                const endsWithMBG = elementNameValue && elementNameValue.slice(-3).toUpperCase() === "MBG";
-
-                // 5️⃣ 检查 WHAT_INTHEBOX 值是否匹配基准
-                const contentMatch = testValue === baselineStr;
-
-                const isMatch = endsWithMBG && contentMatch;
-
-                let message = "";
-                if (isMatch) {
-                    message = `What's in the box匹配成功: Element Name以MBG结尾且内容匹配基准`;
+                if (allMatch) {
+                    const firstResult = results[0];
+                    message = `What's in the box匹配成功（WHAT_INTHEBOX: ${firstResult.whatInTheBox}）`;
+                    if (results.length > 1) {
+                        message += `\n共验证 ${results.length} 个关联的MM Elements`;
+                    }
                 } else {
-                    const issues = [];
-                    if (!endsWithMBG) issues.push(`Element Name不以MBG结尾: "${elementNameValue}"`);
-                    if (!contentMatch) issues.push(`WHAT_INTHEBOX不匹配基准: "${baselineStr}" ≠ "${testValue}"`);
-                    message = `What's in the box验证失败: ${issues.join("; ")}`;
+                    const failed = results.filter(r => !r.isMatch);
+                    message = `What's in the box验证失败:\n`;
+                    failed.forEach(r => {
+                        if (r.error) {
+                            message += `- Element ${r.elementId}: ${r.error}\n`;
+                        } else {
+                            let issues = [];
+                            if (!r.endsWithMBG) {
+                                issues.push(`Element Desc不以MBG结尾: "${r.elementDesc}"`);
+                            }
+                            if (!r.contentMatch) {
+                                issues.push(`WHAT_INTHEBOX不匹配基准: "${baselineStr}" ≠ "${r.whatInTheBox}"`);
+                            }
+                            message += `- Element ${r.elementId}: ${issues.join('；')}\n`;
+                        }
+                    });
                 }
 
                 return {
                     isValid: true,
-                    isMatch: isMatch,
+                    isMatch: allMatch,
                     message: message,
                     baselineValue: baselineStr,
-                    testValue: testValue,
-                    elementNameValue: elementNameValue,
-                    endsWithMBG: endsWithMBG,
-                    contentMatch: contentMatch
+                    results
                 };
 
             } catch (error) {
